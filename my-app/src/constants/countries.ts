@@ -1,0 +1,21 @@
+export const COUNTRIES =
+  [
+    "United States",
+    "Canada",
+    "United Kingdom",
+    "Germany",
+    "France",
+    "Italy",
+    "Spain",
+    "Netherlands",
+    "Poland",
+    "Ukraine",
+    "Russia",
+    "Kazakhstan",
+    "Belarus",
+    "China",
+    "Japan",
+    "South Korea",
+    "Brazil",
+    "Australia",
+  ]
