@@ -2,184 +2,221 @@
 
 import * as React from "react"
 import { useParams } from "next/navigation"
-import Image from "next/image"
-import Link from "next/link"
-import { Play, Pause, Music2, Calendar, Gauge, Disc, ShoppingCart, Check, ChevronLeft, Eye, Heart, Download } from "lucide-react"
+import { Play, Pause, Heart, Share2, Calendar, Disc, Activity, Key, ShieldCheck } from "lucide-react"
+import { ExtendedTrack } from "@/stores/usePromoTracksStore"
 import { usePlayerStore } from "@/stores/player-store"
-import { useRecentStore } from "@/stores/recent-store"
-import { MOCK_BEATS } from "@/mocks/beats"
-import { BeatLicense } from "@/types/beat"
 
-export default function BeatPage() {
-  const params = useParams()
-  const { track, isPlaying, play, togglePlay } = usePlayerStore()
-  const addToRecent = useRecentStore((state) => state.addItem)
+export default function BeatSinglePage() {
+  const { id } = useParams()
+  const [beat, setBeat] = React.useState<ExtendedTrack | null>(null)
+  const [isLoading, setIsLoading] = React.useState(true)
+  const [selectedLicenseId, setSelectedLicenseId] = React.useState<string>("")
 
-  const idFromUrl = React.useMemo(() => {
-    const rawId = Array.isArray(params.id) ? params.id[0] : params.id
-    return rawId ? Number(rawId) : NaN
-  }, [params.id])
+  // Хранилище глобального плеера
+  const { play, pause, track: currentTrack, isPlaying } = usePlayerStore()
 
-  const beat = React.useMemo(() => {
-    return MOCK_BEATS.find((b) => b.id === idFromUrl)
-  }, [idFromUrl])
+  React.useEffect(() => {
+    if (!id) return
+    setIsLoading(true)
+    fetch(`/api/beats/${id}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (!data.error) {
+          setBeat(data)
+          // По умолчанию выбираем первую (самую дешевую) лицензию
+          if (data.licenses?.length > 0) {
+            setSelectedLicenseId(data.licenses[0].id)
+          }
+        }
+      })
+      .catch((err) => console.error(err))
+      .finally(() => setIsLoading(false))
+  }, [id])
 
-  if (!beat) {
+  if (isLoading) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center text-white bg-brand-bg gap-6">
-        <h1 className="text-4xl font-black uppercase tracking-widest text-zinc-600">Beat Not Found</h1>
-        <Link href="/" className="text-brand-red font-bold uppercase text-sm tracking-wider hover:underline flex items-center gap-2">
-          <ChevronLeft size={16} /> Back to Marketplace
-        </Link>
+      <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 flex items-center justify-center">
+        <div className="h-12 w-12 border-4 border-brand-red border-t-transparent rounded-full animate-spin" />
       </div>
     )
   }
 
-  const isCurrent = track?.id === beat.id
-
-  const handlePlay = () => {
-    if (isCurrent) {
-      togglePlay()
-    } else {
-      play({
-        id: beat.id,
-        publicId: beat.publicId,
-        title: beat.title,
-        author: beat.producerDisplayName,
-        image: beat.image,
-        audio: beat.audio,
-      })
-      addToRecent(beat)
-    }
+  if (!beat) {
+    return (
+      <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 flex items-center justify-center text-zinc-500">
+        Бит не найден или был удален.
+      </div>
+    )
   }
 
-  // Форматирование секунд в формат ММ:СС
-  const formatDuration = (s: number) => {
-    if (!s) return "0:00"
-    const mins = Math.floor(s / 60)
-    const secs = Math.floor(s % 60)
-    return `${mins}:${secs.toString().padStart(2, "0")}`
+  const isCurrent = currentTrack?.id === beat.id
+  const activeLicense = beat.licenses.find(l => l.id === selectedLicenseId)
+
+  const handlePlayToggle = () => {
+  if (!beat) return;
+
+  // Создаем объект, адаптированный под требования PlayerTrack
+  const playerReadyTrack = {
+    ...beat,
+    author: beat.producer.displayName || beat.producer.username,
+    publicId: beat.id
+  };
+
+  if (isCurrent) {
+    isPlaying ? pause() : play(playerReadyTrack as any)
+  } else {
+    play(playerReadyTrack as any, [playerReadyTrack] as any)
   }
+}
 
   return (
-    <main className="min-h-screen pt-32 pb-44 px-6 max-w-7xl mx-auto bg-brand-bg text-white relative overflow-hidden">
-      {/* Задний размытый фон для атмосферы кино */}
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[600px] bg-brand-red/10 blur-[160px] rounded-full pointer-events-none z-0" />
-
-      {/* Кнопка Назад */}
-      <Link href="/" className="inline-flex items-center gap-2 text-zinc-500 hover:text-white transition-colors uppercase text-[10px] tracking-[0.3em] font-bold mb-12 z-10 relative">
-        <ChevronLeft size={14} /> Back to explore
-      </Link>
-
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-16 items-start relative z-10">
+    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 p-6 sm:p-12 transition-colors">
+      <div className="max-w-6xl mx-auto space-y-10">
         
-        {/* ЛЕВАЯ КОЛОНКА: МЕГА-ОБЛОЖКА */}
-        <div className="lg:col-span-5 sticky top-32">
-          <div className="relative aspect-square w-full rounded-[40px] overflow-hidden border border-white/5 bg-zinc-900 group shadow-[0_50px_100px_rgba(0,0,0,0.8)]">
-            <Image src={beat.image} alt={beat.title} fill priority className="object-cover transition-transform duration-700 group-hover:scale-105" />
-            <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-              <button onClick={handlePlay} className="w-24 h-24 flex items-center justify-center rounded-full bg-white text-black hover:bg-brand-red hover:text-white transition-all duration-300 transform scale-90 group-hover:scale-100 shadow-2xl">
-                {isCurrent && isPlaying ? <Pause size={36} fill="currentColor" /> : <Play size={36} className="ml-2" fill="currentColor" />}
+        {/* Главный блок: Обложка и Информация */}
+        <div className="flex flex-col md:flex-row gap-8 items-center md:items-end border-b border-zinc-200 dark:border-zinc-800 pb-10">
+          {/* Обложка */}
+          <div className="relative h-64 w-64 sm:h-72 sm:w-72 rounded-3xl overflow-hidden shadow-2xl bg-zinc-800 flex-shrink-0 group">
+            {beat.image && (
+              <img src={beat.image} alt={beat.title} className="object-cover h-full w-full group-hover:scale-105 transition-transform duration-500" />
+            )}
+            <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+              <button
+                onClick={handlePlayToggle}
+                className="bg-brand-red hover:scale-110 text-white p-5 rounded-full shadow-xl transition-all active:scale-95"
+              >
+                {isCurrent && isPlaying ? <Pause size={32} fill="currentColor" /> : <Play size={32} className="ml-1" fill="currentColor" />}
               </button>
             </div>
           </div>
 
-          {/* Быстрая статистика под обложкой (BPM, Тональность, Время) */}
-          <div className="grid grid-cols-3 gap-4 mt-8 p-6 rounded-3xl bg-brand-card/20 border border-white/5 backdrop-blur-md">
-            <div className="flex flex-col items-center justify-center text-center">
-              <Gauge size={18} className="text-brand-red mb-2" />
-              <span className="text-zinc-500 text-[10px] font-bold uppercase tracking-wider">BPM</span>
-              <span className="text-base font-black mt-0.5">{beat.bpm}</span>
+          {/* Мета-информация */}
+          <div className="flex-1 text-center md:text-left space-y-4">
+            <div className="flex flex-wrap justify-center md:justify-start gap-2">
+              <span className="text-[10px] font-black uppercase tracking-wider text-brand-red bg-brand-red/10 px-3 py-1 rounded-full">
+                {beat.genre?.name || "Бит"}
+              </span>
+              {beat.tags.map((tag) => (
+                <span key={tag} className="text-[10px] font-bold uppercase tracking-wider bg-zinc-200 dark:bg-zinc-800 px-3 py-1 rounded-full text-zinc-600 dark:text-zinc-400">
+                  #{tag}
+                </span>
+              ))}
             </div>
-            <div className="flex flex-col items-center justify-center text-center border-x border-white/5">
-              <Disc size={18} className="text-brand-red mb-2" />
-              <span className="text-zinc-500 text-[10px] font-bold uppercase tracking-wider">KEY</span>
-              <span className="text-base font-black mt-0.5">{beat.musicKey}</span>
-            </div>
-            <div className="flex flex-col items-center justify-center text-center">
-              <Calendar size={18} className="text-brand-red mb-2" />
-              <span className="text-zinc-500 text-[10px] font-bold uppercase tracking-wider">DURATION</span>
-              <span className="text-base font-black mt-0.5">{formatDuration(beat.duration)}</span>
-            </div>
-          </div>
 
-          {/* Социальная статистика бита (Прослушивания, Лайки, Скачивания) */}
-          <div className="flex justify-between px-6 py-4 mt-4 rounded-2xl bg-zinc-900/40 border border-white/5 text-xs font-bold text-zinc-400 uppercase tracking-wider">
-            <span className="flex items-center gap-2"><Eye size={14} className="text-zinc-600" /> {beat.plays} Plays</span>
-            <span className="flex items-center gap-2"><Heart size={14} className="text-zinc-600" /> {beat.likes} Likes</span>
-            <span className="flex items-center gap-2"><Download size={14} className="text-zinc-600" /> {beat.downloads}</span>
+            <h1 className="text-4xl sm:text-5xl font-black tracking-tight uppercase leading-none">
+              {beat.title}
+            </h1>
+
+            <div className="flex items-center justify-center md:justify-start gap-3">
+              <div className="h-7 w-7 rounded-full overflow-hidden bg-zinc-700">
+                {beat.producer.avatar && <img src={beat.producer.avatar} alt="producer" className="object-cover h-full w-full" />}
+              </div>
+              <p className="text-zinc-500 dark:text-zinc-400 font-semibold">
+                {beat.producer.displayName || beat.producer.username}
+              </p>
+            </div>
+
+            {/* Быстрые фичи */}
+            <div className="flex flex-wrap justify-center md:justify-start gap-6 text-sm font-bold text-zinc-400 pt-2">
+              <div className="flex items-center gap-2">
+                <Activity size={18} className="text-brand-red" />
+                <span>{beat.bpm} BPM</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Key size={18} className="text-brand-red" />
+                <span>{beat.musicKey}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Calendar size={18} className="text-brand-red" />
+                <span>{new Date(beat.createdAt).toLocaleDateString("ru-RU")}</span>
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* ПРАВАЯ КОЛОНКА: ИНФО И ЛИЦЕНЗИИ */}
-        <div className="lg:col-span-7">
-          <div className="mb-12">
-            <h1 className="text-5xl md:text-7xl font-black uppercase tracking-tight mb-4 leading-none text-white">
-              {beat.title}
-            </h1>
-            <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-              <Link href={`/${beat.producerUsername}`} className="text-sm text-brand-red font-black uppercase tracking-[0.2em] hover:text-white transition-colors">
-                Produced by {beat.producerDisplayName}
-              </Link>
-              <span className="text-xs text-zinc-600 uppercase font-black tracking-widest px-3 py-1 bg-zinc-900 rounded-full border border-white/5">
-                {beat.genre}
-              </span>
+        {/* Сетка: Выбор Лицензий vs Описание автора */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          
+          {/* Левая колонка: Выбор и покупка лицензии */}
+          <div className="lg:col-span-2 space-y-4">
+            <h2 className="text-lg font-black uppercase tracking-wide flex items-center gap-2">
+              <ShieldCheck className="text-brand-red" /> Выберите лицензию
+            </h2>
+
+            <div className="space-y-3">
+              {beat.licenses.map((license: any) => {
+                // Безопасное извлечение данных из шаблона
+                const templateInfo = license.template
+                if (!templateInfo) return null
+
+                return (
+                  <div
+                    key={license.id}
+                    onClick={() => setSelectedLicenseId(license.id)}
+                    className={`p-5 bg-white dark:bg-zinc-900 border rounded-2xl cursor-pointer transition-all flex items-center justify-between ${
+                      selectedLicenseId === license.id
+                        ? "border-brand-red ring-1 ring-brand-red"
+                        : "border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700"
+                    }`}
+                  >
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-3">
+                        <div className={`h-4 w-4 rounded-full border flex items-center justify-center ${selectedLicenseId === license.id ? "border-brand-red" : "border-zinc-400"}`}>
+                          {selectedLicenseId === license.id && <div className="h-2 w-2 bg-brand-red rounded-full" />}
+                        </div>
+                        {/* СТАЛО: Берем имя из вложенного шаблона */}
+                        <h3 className="font-bold text-base">{templateInfo.name}</h3>
+                      </div>
+                      <p className="text-xs text-zinc-400 pl-7">
+                        {/* СТАЛО: Читаем новые свойства из схемы (fileType, распределение копий и стримов) */}
+                        {[
+                          templateInfo.fileType?.replace("_", " ") || "Audio",
+                          templateInfo.audioStreams === null ? "Безлимитные стримы" : `До ${templateInfo.audioStreams.toLocaleString()} стримов`,
+                          templateInfo.distributionCopies === null ? "Unlimited копий" : `До ${templateInfo.distributionCopies.toLocaleString()} копий`
+                        ].filter(Boolean).join(" • ")}
+                      </p>
+                    </div>
+                    <span className="font-black text-lg text-brand-red">
+                      ${license.price.toFixed(2)}
+                    </span>
+                  </div>
+                )
+              })}
             </div>
 
-            {/* Рендеринг тегов бита из массива tags */}
-            {beat.tags && beat.tags.length > 0 && (
-              <div className="flex flex-wrap gap-2 mt-6">
-                {beat.tags.map((tag, index) => (
-                  <span key={index} className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">
-                    #{tag}
-                  </span>
-                ))}
-              </div>
+            {/* Кнопка действия добавления в корзину */}
+            {activeLicense && (
+              <button className="w-full bg-zinc-900 hover:bg-brand-red dark:bg-zinc-100 dark:hover:bg-brand-red text-white dark:text-zinc-900 dark:hover:text-white py-4 rounded-2xl font-black uppercase tracking-wide text-sm transition-all active:scale-[0.99] shadow-lg mt-4">
+                Добавить в корзину — ${activeLicense.price.toFixed(2)}
+              </button>
             )}
           </div>
 
-          <h3 className="text-[11px] font-black uppercase tracking-[0.3em] text-zinc-500 mb-6">Select License</h3>
-          
-          <div className="space-y-4">
-            {beat.licenses?.map((license: BeatLicense) => (
-              <div key={license.id} className="group flex flex-col md:flex-row md:items-center justify-between p-6 md:p-8 rounded-[32px] bg-brand-card/30 border border-white/5 hover:border-brand-red/40 hover:bg-brand-card/60 transition-all duration-300 backdrop-blur-sm">
-                <div className="flex items-center gap-6">
-                  <div className="h-14 w-14 rounded-2xl bg-zinc-950 flex items-center justify-center text-zinc-500 border border-white/5 group-hover:text-brand-red group-hover:border-brand-red/20 transition-colors">
-                    <Music2 size={24} />
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-xl text-white group-hover:text-brand-red transition-colors">{license.title}</h4>
-                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] font-black text-zinc-500 uppercase tracking-widest mt-1.5">
-                      <span className="flex items-center gap-1.5">
-                        <Check size={12} strokeWidth={3} className="text-brand-red" /> MP3
-                      </span>
-                      <span className="flex items-center gap-1.5">
-                        <Check size={12} strokeWidth={3} className={license.wavIncluded ? "text-brand-red" : "text-zinc-800"} /> WAV
-                      </span>
-                      <span className="flex items-center gap-1.5">
-                        <Check size={12} strokeWidth={3} className={license.stemsIncluded ? "text-brand-red" : "text-zinc-800"} /> STEMS
-                      </span>
-                      <span className="flex items-center gap-1.5">
-                        <Check size={12} strokeWidth={3} className={license.trackoutIncluded ? "text-brand-red" : "text-zinc-800"} /> TRACKOUT
-                      </span>
-                      {license.unlimitedStreams && (
-                        <span className="text-brand-red font-extrabold bg-brand-red/10 px-1.5 py-0.5 rounded text-[9px]">
-                          UNLIMITED STREAMS
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-                <button className="mt-6 md:mt-0 bg-white text-black hover:bg-brand-red hover:text-white px-8 py-4 rounded-xl font-black text-sm flex items-center justify-center gap-3 transition-all duration-300 active:scale-95 shadow-xl">
-                  <ShoppingCart size={16} strokeWidth={2.5} />
-                  <span>${license.price}</span>
-                </button>
-              </div>
-            ))}
+          {/* Правая колонка: Профиль Продюсера и Соц-кнопки */}
+          <div className="space-y-6">
+            <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-3xl space-y-4 shadow-sm">
+              <h3 className="text-xs font-black uppercase tracking-wider text-zinc-400 border-b border-zinc-100 dark:border-zinc-800 pb-2">
+                О продюсере
+              </h3>
+              <p className="text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
+                {beat.producer.biography || "Этот битмейкер пока не добавил описание своего профиля."}
+              </p>
+            </div>
+
+            {/* Панель шеринга и лайков */}
+            <div className="flex gap-3">
+              <button className="flex-1 bg-white hover:bg-zinc-100 dark:bg-zinc-900 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 p-3.5 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-colors">
+                <Heart size={16} className="text-brand-red" /> Избранное
+              </button>
+              <button className="bg-white hover:bg-zinc-100 dark:bg-zinc-900 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 p-3.5 rounded-xl transition-colors">
+                <Share2 size={16} />
+              </button>
+            </div>
           </div>
+
         </div>
 
       </div>
-    </main>
+    </div>
   )
 }

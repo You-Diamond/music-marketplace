@@ -1,0 +1,337 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// --- ENUMS ---
+
+enum Role {
+  USER
+  PRODUCER
+  ADMIN
+}
+
+enum NotificationType {
+  LIKE
+  PURCHASE
+  FOLLOW
+  PLAYLIST
+  MESSAGE
+}
+
+enum OrderStatus {
+  PENDING
+  COMPLETED
+  CANCELLED
+  REFUNDED
+}
+
+// Новый Enum для четкой типизации типов файлов в лицензиях
+enum LicenseFileType {
+  MP3_TAGGED
+  MP3_UNTAGGED
+  MP3_WAV
+  STEMS
+}
+
+// --- CORE MODELS ---
+
+model User {
+  id             String   @id @default(uuid())
+  email          String   @unique
+  username       String   @unique
+  displayName    String?
+  role           Role     @default(USER)
+  
+  // Authentication fields
+  password       String?                    // Nullable for future OAuth integration
+  verified       Boolean  @default(false)   // Email verification status
+  
+  avatar         String?
+  biography      String?
+  location       String?
+  
+  isTopProducer  Boolean  @default(false)
+
+  followersCount Int      @default(0)
+  totalPlays     Int      @default(0)
+  
+  settings       Json?     
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  subscriptionId String?
+  subscription   SubscriptionPlan? @relation(fields: [subscriptionId], references: [id])
+
+  // Связи
+  tracks           Track[]
+  soundPacks       SoundPack[]
+  likes            Like[]
+  orders           Order[]
+  notifications    Notification[]
+  // Глобальные шаблоны лицензий, настроенные этим продюсером
+  licenseTemplates LicenseTemplate[] 
+}
+
+model Track {
+  id                 String   @id @default(uuid())
+  title              String
+  bpm                Int
+  musicKey           String
+  image              String?
+  audio              String   // URL на аудиофайл
+  duration           Int      // В секундах
+  plays              Int      @default(0)
+  downloads          Int      @default(0)
+  
+  featured           Boolean  @default(false) 
+  isSpotlight        Boolean  @default(false) 
+  exclusiveAvailable Boolean  @default(true)
+  isActive           Boolean  @default(true)  
+  
+  tags               String[] 
+
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  producerId         String
+  producer           User     @relation(fields: [producerId], references: [id], onDelete: Cascade)
+  
+  genreId            String
+  genre              Genre    @relation(fields: [genreId], references: [id], onDelete: Restrict)
+  
+  playlists          Playlist[] @relation("PlaylistTracks") 
+  
+  // Лицензии, примененные конкретно к этому треку
+  licenses           License[]
+  likes              Like[]
+}
+
+// --- NEW HOMEPAGE & MODERATION MODELS ---
+
+model Genre {
+  id        String   @id @default(uuid())
+  name      String   @unique 
+  slug      String   @unique 
+  isActive  Boolean  @default(true) 
+  createdAt DateTime @default(now())
+  
+  tracks    Track[]
+
+  @@map("genre")
+}
+
+model Playlist {
+  id          String   @id @default(uuid())
+  title       String
+  description String?
+  image       String?  
+  isFeatured  Boolean  @default(false) 
+  isActive    Boolean  @default(true)  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tracks      Track[]  @relation("PlaylistTracks")
+
+  @@map("playlist")
+}
+
+model SoundPack {
+  id          String   @id @default(uuid())
+  title       String
+  price       Float
+  image       String?
+  soundsCount Int      @default(0)
+  isFeatured  Boolean  @default(false) 
+  isActive    Boolean  @default(true)  
+  createdAt   DateTime @default(now())
+
+  producerId  String
+  producer    User     @relation(fields: [producerId], references: [id], onDelete: Cascade)
+
+  @@map("soundpack")
+}
+
+// --- LICENSES & CONTRACTS ---
+
+// 1. Глобальный шаблон лицензии продюсера
+model LicenseTemplate {
+  id              String          @id @default(uuid())
+  name            String          // Название (например, "Basic MP3 Lease")
+  slug            String          // Уникальный идентификатор типа ("mp3", "wav", "stems", "exclusive")
+  defaultPrice    Float           // Базовая цена по умолчанию
+  fileType        LicenseFileType @default(MP3_TAGGED)
+  isDefaultActive Boolean         @default(true) // Включать ли автоматом для новых треков
+
+  // Юридический блок контракта (Contract info)
+  // Int? означает, что поле может быть null, что в коде мы интерпретируем как "Unlimited"
+  
+  // Territory
+  arbitrationCountry       String  @default("United States")
+  governingLawCountry      String  @default("United States")
+
+  // Distribution
+  termYears                Int?    // null = Unlimited
+  distributionCopies       Int?    // null = Unlimited
+  audioStreams             Int?    // null = Unlimited
+  freeDownloads            Int?    // null = Unlimited
+
+  // Music videos
+  musicVideosMonetized     Int?    // null = Unlimited
+  musicVideosNonMonetized  Int?    // null = Unlimited
+  videoStreamsMonetized    Int?    // null = Unlimited
+  videoStreamsNonMonetized Int?    // null = Unlimited
+
+  // Radio broadcasting
+  radioBroadcastingRights  Boolean @default(false)
+  radioStations            Int?    // null = Unlimited
+
+  // Live performances
+  livePerformancesForProfit Boolean @default(false)
+  livePerformancesNonProfit Int?    // null = Unlimited
+
+  // Связь с продюсером
+  producerId      String
+  producer        User            @relation(fields: [producerId], references: [id], onDelete: Cascade)
+  
+  // Связь со всеми инстансами на треках
+  trackLicenses   License[]
+
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+}
+
+// 2. Конкретная лицензия, привязанная к треку
+model License {
+  id        String   @id @default(uuid())
+  price     Float    // Цена для Конкретного трека (по умолчанию берется из шаблона, но юзер может изменить)
+  isActive  Boolean  @default(true) // Флаг активности лицензии для этого трека (Вкладка 3 матрицы)
+
+  trackId   String
+  track     Track    @relation(fields: [trackId], references: [id], onDelete: Cascade)
+
+  templateId String
+  template   LicenseTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  orderItems OrderItem[]
+
+  @@unique([trackId, templateId]) // У одного трека не может быть двух одинаковых типов лицензий
+}
+
+model Like {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  trackId   String
+  track     Track    @relation(fields: [trackId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, trackId])
+}
+
+// --- ORDERS & SUBSCRIPTIONS ---
+
+model Order {
+  id          String      @id @default(uuid())
+  totalAmount Float
+  status      OrderStatus @default(PENDING)
+  createdAt   DateTime    @default(now())
+
+  userId      String
+  user        User        @relation(fields: [userId], references: [id], onDelete: Restrict)
+  
+  items       OrderItem[]
+}
+
+model OrderItem {
+  id         String   @id @default(uuid())
+  priceAtBuy Float    
+
+  orderId    String
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  trackId    String?
+  licenseId  String?
+  license    License? @relation(fields: [licenseId], references: [id], onDelete: SetNull)
+}
+
+model SubscriptionPlan {
+  id              String   @id @default(uuid())
+  name            String   @unique // "FREE", "PRO"
+  displayName     String   // "Free", "Professional"
+  description     String?
+  monthlyPrice    Float    @default(0) // 0 для FREE
+  maxTracks       Int      // Максимум треков (например, 3 для FREE, -1 для безлимит)
+  features        Json?    // JSON с дополнительными фичами
+  
+  subscriptions   Subscription[]
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// Рекуррентная подписка пользователя
+model Subscription {
+  id                    String   @id @default(uuid())
+  userId                String   @unique
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  planId                String
+  plan                  SubscriptionPlan @relation(fields: [planId], references: [id])
+  
+  status                String   @default("active") // active, canceled, suspended, expired
+  autoRenew             Boolean  @default(true)
+  
+  // Платежные данные от провайдера
+  paymentMethodId       String?  // Сохраненный ID карты/метода оплаты (от ЮКассы)
+  paymentProvider       String?  // "yukassa" или "t-kassa"
+  
+  // Даты подписки
+  currentPeriodStart    DateTime?
+  currentPeriodEnd      DateTime?
+  
+  // История
+  subscriptionLogs      SubscriptionLog[]
+  
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  
+  @@index([userId])
+  @@index([status])
+}
+
+// Лог событий подписки (для трекинга платежей и проблем)
+model SubscriptionLog {
+  id                String   @id @default(uuid())
+  subscriptionId    String
+  subscription      Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  
+  event             String   // "subscribed", "renewed", "failed", "canceled", "suspended"
+  message           String?
+  paymentId         String?  // ID платежа от провайдера (для трекинга)
+  errorDetails      Json?    // Детали ошибки если event = "failed"
+  
+  createdAt         DateTime @default(now())
+  
+  @@index([subscriptionId])
+  @@index([createdAt])
+}
+
+model Notification {
+  id          String           @id @default(uuid())
+  type        NotificationType
+  title       String
+  description String
+  read        Boolean          @default(false)
+  createdAt   DateTime         @default(now())
+
+  userId      String
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+}

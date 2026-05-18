@@ -78,7 +78,7 @@ export default function GlobalPlayer() {
   }
 
   // Создаем безопасную ссылку на страницу автора на основе его имени
-  const authorUrl = track.author ? `/${track.author.toLowerCase().replace(/\s+/g, '')}` : "#"
+  const authorUrl = track.publicId ? `/${track.publicId}` : "#"
 
   return (
     <div className="fixed bottom-0 left-0 right-0 z-[100] flex justify-center px-6 pb-8">
