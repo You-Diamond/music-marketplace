@@ -4,7 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import { 
   X, User, Settings, FolderHeart, CreditCard, 
-  Plus, LogOut, Disc, ShieldCheck, Wallet 
+  Plus, LogOut, Disc, ShieldCheck, Wallet, Shield  
 } from "lucide-react"
 
 type Props = {
@@ -63,23 +63,31 @@ export default function AppSidebar({ isOpen, onClose }: Props) {
 
           {/* Навигация */}
           <div className="mt-6 space-y-0.5">
-            <span className="text-[9px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-widest block px-2.5 mb-2">Personal</span>
-            {[
-              { href: "/vision", icon: User, label: "My Studio Profile" },
-              { href: "/dashboard", icon: Disc, label: "Tracks & Kits Manager" },
-              { href: "/purchases", icon: FolderHeart, label: "Purchased Beats" },
-              { href: "/billing", icon: CreditCard, label: "Sales & Billing" },
-              { href: "/settings", icon: Settings, label: "Account Settings" }
-            ].map((link) => {
-              const Icon = link.icon
-              return (
-                <Link key={link.href} href={link.href} onClick={onClose} className="flex items-center gap-3.5 text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-white hover:bg-white dark:hover:bg-zinc-900/60 rounded-lg px-2.5 py-2.5 text-xs font-semibold transition shadow-sm shadow-transparent hover:shadow-zinc-100 dark:hover:shadow-none">
-                  <Icon size={15} className="text-zinc-400" />
-                  <span>{link.label}</span>
-                </Link>
-              )
-            })}
-          </div>
+          <span className="text-[9px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-widest block px-2.5 mb-2">
+            Producer Studio
+          </span>
+          {[
+            { href: "/vision", icon: User, label: "My Studio Profile" },
+            { href: "/dashboard", icon: Disc, label: "Tracks & Kits Manager" },
+            { href: "/dashboard/licenses", icon: ShieldCheck, label: "License Configurator" }, // Наша фича!
+            { href: "/billing", icon: CreditCard, label: "Sales & Billing" },
+            { href: "/purchases", icon: FolderHeart, label: "Purchased Beats" },
+            { href: "/settings", icon: Settings, label: "Account Settings" }
+          ].map((link) => {
+            const Icon = link.icon
+            return (
+              <Link 
+                key={link.href} 
+                href={link.href} 
+                onClick={onClose} 
+                className="flex items-center gap-3.5 text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-white hover:bg-white dark:hover:bg-zinc-900/60 rounded-lg px-2.5 py-2.5 text-xs font-semibold transition shadow-sm shadow-transparent hover:shadow-zinc-100 dark:hover:shadow-none"
+              >
+                <Icon size={15} className="text-zinc-400" />
+                <span>{link.label}</span>
+              </Link>
+            )
+          })}
+        </div>
         </div>
 
         {/* Подвал действий */}

@@ -1,5 +1,5 @@
 export type PlayerTrack = {
-  id: number;
+  id: string; // Изменено: number -> string
   publicId: string;
   title: string;
   author: string;
@@ -9,9 +9,9 @@ export type PlayerTrack = {
 
 export type PlayerState = {
   track: PlayerTrack | null;
-  queue: PlayerTrack[]; // Очередь
+  queue: PlayerTrack[];
   isPlaying: boolean;
-  isMuted: boolean;    // Мут
+  isMuted: boolean;
   volume: number;
   currentTime: number;
   duration: number;
