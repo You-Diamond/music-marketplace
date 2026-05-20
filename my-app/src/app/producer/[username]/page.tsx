@@ -1,213 +1,157 @@
-"use client"
-
-import * as React from "react"
-import { useParams } from "next/navigation"
+import { notFound } from "next/navigation"
 import Link from "next/link"
-import { CheckCircle, Music, Disc, ExternalLink, Globe } from "lucide-react"
-import { ExtendedTrack } from "@/stores/usePromoTracksStore"
-import { usePlayerStore } from "@/stores/player-store"
+import prisma from "@/lib/prisma"
+import { Music, Layers, Star, SlidersHorizontal, ArrowUpRight } from "lucide-react"
 
-interface ProducerProfile {
-  id: string
-  username: string
-  displayName: string | null
-  avatar: string | null
-  biography: string | null
-  verified: boolean
-  _count: { tracks: number }
-}
+// Компоненты клиентской части
+import TrendingTracks from "@/components/home/TrendingTracks"
+import SoundPackGrid from "@/components/home/SoundPackGrid"
+import FeaturedPlaylists from "@/components/home/FeaturedPlaylists"
 
-export default function ProducerProfilePage() {
-  const params = useParams()
-  // Безопасно извлекаем username для поддержки стандартов Next.js 16
-  const username = typeof params?.username === "string" ? params.username : ""
+export const revalidate = 60
 
-  const [profile, setProfile] = React.useState<ProducerProfile | null>(null)
-  const [beats, setBeats] = React.useState<ExtendedTrack[]>([])
-  const [isLoading, setIsLoading] = React.useState(true)
+export default async function ProducerProfilePage({ 
+  params 
+}: { 
+  params: Promise<{ username: string }> 
+}) {
+  const { username } = await params
 
-  // Подключаем наш глобальный плеер
-  const { play, track: currentTrack, isPlaying } = usePlayerStore()
+  // 1. Получаем данные продюсера с включением связей (треки, паки, плейлисты)
+  const producer = await prisma.user.findUnique({
+    where: { username },
+    include: {
+      tracks: {
+        where: { isActive: true },
+        include: { genre: true, licenses: { orderBy: { price: "asc" } } }
+      },
+      soundPacks: { orderBy: { createdAt: "desc" } },
+      playlists: { // Добавили связь с плейлистами
+        where: { isPrivate: false },
+        include: { _count: { select: { tracks: true } } }
+      },
+      _count: {
+        select: { tracks: true, followers: true }
+      }
+    }
+  })
 
-  React.useEffect(() => {
-    if (!username) return
-    setIsLoading(true)
-    
-    // Исправлено: запрашиваем из верного эндпоинта /api/producer/
-    fetch(`/api/producer/${username}`)
-      .then((res) => res.json())
-      .then((data) => {
-        if (!data.error) {
-          setProfile(data.profile)
-          setBeats(data.beats)
-        }
-      })
-      .catch((err) => console.error(err))
-      .finally(() => setIsLoading(false))
-  }, [username])
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 flex items-center justify-center">
-        <div className="h-12 w-12 border-4 border-brand-red border-t-transparent rounded-full animate-spin" />
-      </div>
-    )
+  if (!producer || producer.role !== "PRODUCER") {
+    notFound()
   }
 
-  if (!profile) {
-    return (
-      <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 flex items-center justify-center text-zinc-500">
-        Профиль битмейкера не найден.
-      </div>
-    )
+  // 2. Логика разделения контента
+  const featuredTracks = producer.tracks.filter((track: any) => track.isFeatured || track.featured)
+  const regularTracks = producer.tracks.filter((track: any) => !(track.isFeatured || track.featured))
+
+  const formatTracksForComponent = (tracksArray: any[]) => {
+    return tracksArray.map(t => ({
+      id: t.id,
+      title: t.title,
+      image: t.image,
+      bpm: t.bpm,
+      musicKey: t.musicKey || "N/A",
+      startingPrice: t.licenses[0]?.price || 0,
+      producer: {
+        username: producer.username,
+        displayName: producer.displayName
+      }
+    }))
   }
 
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 p-6 sm:p-12 transition-colors">
-      <div className="max-w-6xl mx-auto space-y-12">
-        
-        {/* Шапка профиля (Продакшн-карточка) */}
-        <div className="relative bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800/80 rounded-[32px] p-6 sm:p-10 shadow-sm overflow-hidden flex flex-col md:flex-row items-center md:items-start gap-8">
-          {/* Свечение на заднем фоне карточки */}
-          <div className="absolute top-0 right-0 w-48 h-48 bg-brand-red/5 rounded-full filter blur-3xl pointer-events-none" />
-          
-          {/* Аватар */}
-          <div className="h-32 w-32 sm:h-40 sm:w-40 rounded-3xl overflow-hidden bg-zinc-100 dark:bg-zinc-800 shadow-md flex-shrink-0 relative group border-2 border-zinc-200/50 dark:border-zinc-800">
-            {profile.avatar ? (
-              <img src={profile.avatar} alt={profile.username} className="object-cover h-full w-full" />
-            ) : (
-              <div className="h-full w-full flex items-center justify-center text-zinc-400 font-bold text-3xl uppercase">
-                {profile.username.substring(0, 2)}
-              </div>
-            )}
-          </div>
+    <div className="min-h-screen bg-[#0c0d12] text-zinc-100 pb-20">
+      
+      {/* HERO-БАННЕР */}
+      <div className="relative h-[45vh] min-h-[350px] w-full overflow-hidden flex items-end">
+        <div className="absolute inset-0 bg-gradient-to-t from-[#0c0d12] via-[#0c0d12]/60 to-transparent z-10" />
+        <div className="absolute inset-0 bg-cover bg-center scale-105 blur-2xl opacity-35" style={{ backgroundImage: `url(${producer.avatar || '/default-avatar.png'})` }} />
 
-          {/* Инфо */}
-          <div className="flex-1 text-center md:text-left space-y-4">
+        <div className="max-w-[1600px] w-full mx-auto px-4 sm:px-8 lg:px-12 pb-8 relative z-20 flex flex-col sm:flex-row sm:items-end justify-between gap-6">
+          <div className="flex items-center gap-6">
+            <div className="h-24 w-24 sm:h-32 sm:w-32 rounded-2xl overflow-hidden border border-white/[0.08] bg-zinc-900 shrink-0 shadow-2xl">
+              <img src={producer.avatar || "/default-avatar.png"} alt={producer.displayName || producer.username} className="w-full h-full object-cover" />
+            </div>
             <div className="space-y-1.5">
-              <div className="flex items-center justify-center md:justify-start gap-2.5">
-                <h1 className="text-3xl sm:text-4xl font-black uppercase tracking-tight">
-                  {profile.displayName || profile.username}
-                </h1>
-                {profile.verified && (
-                <span title="Verified Producer" className="flex-shrink-0 flex items-center">
-                  <CheckCircle size={22} className="text-blue-500 fill-blue-500/10" />
-                </span>
-              )}
-              </div>
-              <p className="text-sm font-semibold text-zinc-400 tracking-medium">
-                @{profile.username}
-              </p>
+              <h1 className="text-2xl sm:text-4xl font-bold tracking-tight text-white">{producer.displayName || producer.username}</h1>
+              <p className="text-sm text-purple-400 font-medium font-mono">@{producer.username}</p>
+              <div className="flex items-center gap-4 text-xs font-mono text-zinc-400 pt-1">
+              <div><span className="text-white font-bold">{producer._count.tracks}</span> битов</div>
+              <div className="h-3 w-[1px] bg-white/[0.08]" />
+              <div><span className="text-white font-bold">{producer._count.followers}</span> фолловеров</div>
             </div>
-
-            {/* Биография */}
-            <p className="text-sm text-zinc-600 dark:text-zinc-400 max-w-2xl leading-relaxed">
-              {profile.biography || "Этот битмейкер ещё не добавил информацию о себе."}
-            </p>
-
-            {/* Статистика и Соцсети */}
-            <div className="flex flex-wrap items-center justify-center md:justify-start gap-6 text-xs font-bold uppercase tracking-wider pt-2 text-zinc-400">
-              <div className="bg-zinc-100 dark:bg-zinc-800/60 px-4 py-2 rounded-xl text-zinc-700 dark:text-zinc-300">
-                Биты: <span className="text-brand-red font-black ml-0.5">{profile._count.tracks}</span>
-              </div>
-              <a href="#" className="flex items-center gap-1.5 hover:text-brand-red transition-colors">
-                <Globe size={14} /> Website
-              </a>
-              <a href="#" className="flex items-center gap-1.5 hover:text-brand-red transition-colors">
-                <ExternalLink size={14} /> Instagram
-              </a>
             </div>
           </div>
+          <Link href={`/beats?producer=${producer.username}`} className="h-11 px-6 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-medium text-sm transition-all flex items-center gap-2">
+            Открыть весь каталог <ArrowUpRight size={16} />
+          </Link>
         </div>
+      </div>
 
-        {/* Сетка битов этого продюсера */}
-        <div className="space-y-6">
-          <h2 className="text-xl font-black uppercase tracking-tight flex items-center gap-2">
-            <Music size={20} className="text-brand-red" /> Все релизы автора
-          </h2>
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-8 lg:px-12 mt-12 space-y-16">
+        
+        {/* БИОГРАФИЯ */}
+        {producer.biography && (
+          <div className="p-6 rounded-2xl bg-zinc-900/20 border border-white/[0.04] max-w-3xl">
+            <h3 className="text-xs font-bold uppercase tracking-widest text-zinc-400 mb-2">О продюсере</h3>
+            <p className="text-sm text-zinc-400 leading-relaxed font-light">{producer.biography}</p>
+          </div>
+        )}
 
-          <div className="space-y-3">
-            {beats.length === 0 ? (
-              <div className="text-center py-16 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl">
-                <Disc className="mx-auto text-zinc-300 dark:text-zinc-700 h-12 w-12" />
-                <p className="mt-4 text-zinc-500 font-medium">Этот автор ещё не загрузил ни одного бита.</p>
-              </div>
-            ) : (
-              beats.map((b) => {
-                const basePrice = b.licenses[0]?.price || 29.99
-                const isCurrent = currentTrack?.id === b.id
+        {/* FEATURED ТРЕКИ */}
+        {featuredTracks.length > 0 && (
+          <section className="w-full space-y-6">
+            <h2 className="text-2xl font-semibold text-white flex items-center gap-2">
+              <Star size={20} className="text-purple-400 fill-purple-400" /> Рекомендуемые релизы
+            </h2>
+            <TrendingTracks tracks={formatTracksForComponent(featuredTracks)} />
+          </section>
+        )}
 
-                return (
-                  <div
-                    key={b.id}
-                    className={`flex items-center justify-between p-4 bg-white dark:bg-zinc-900 border rounded-2xl group transition-all hover:shadow-md ${
-                      isCurrent ? "border-brand-red bg-brand-red/[0.01]" : "border-zinc-200/60 dark:border-zinc-800/60"
-                    }`}
-                  >
-                    {/* Обложка + Название бита */}
-                    <div className="flex items-center gap-4">
-                      <div className="relative h-12 w-12 rounded-xl overflow-hidden shadow-inner flex-shrink-0 bg-zinc-100 dark:bg-zinc-800">
-                        {b.image && (
-                          <img src={b.image} alt={b.title} className="object-cover h-full w-full" />
-                        )}
-                        <button
-                          onClick={() => {
-                            const playerReadyTrack = {
-                              ...b,
-                              author: b.producer.displayName || b.producer.username,
-                              publicId: b.id
-                            }
-                            const playerReadyQueue = beats.map(item => ({
-                              ...item,
-                              author: item.producer.displayName || item.producer.username,
-                              publicId: item.id
-                            }))
-                            play(playerReadyTrack as any, playerReadyQueue as any)
-                          }}
-                          className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-white"
-                        >
-                          <Music size={18} className={isCurrent && isPlaying ? "animate-bounce" : ""} />
-                        </button>
-                      </div>
+        {/* ПЛЕЙЛИСТЫ (ИНТЕГРИРОВАНО) */}
+        {Array.isArray(producer.playlists) && producer.playlists.length > 0 && (
+        <section className="w-full">
+          <FeaturedPlaylists playlists={producer.playlists as any} />
+        </section>
+      )}
 
-                      <div>
-                        <Link href={`/beats/${b.id}`} className="font-bold text-sm tracking-tight leading-none hover:text-brand-red transition-colors block">
-                          {b.title}
-                        </Link>
-                        <div className="flex gap-2 mt-1.5 sm:hidden text-[10px] font-bold text-zinc-400">
-                          <span>{b.bpm} BPM</span>
-                          <span>•</span>
-                          <span>{b.musicKey}</span>
-                        </div>
-                      </div>
+        {/* ВСЕ ТРЕКИ */}
+        {regularTracks.length > 0 && (
+          <section className="w-full space-y-6">
+            <div className="flex items-end justify-between border-b border-white/[0.04] pb-4">
+              <h2 className="text-2xl font-semibold text-white">Все биты продюсера</h2>
+              <Link href={`/beats?producer=${producer.username}`} className="text-xs font-medium text-zinc-400 hover:text-white flex items-center gap-1.5">
+                <SlidersHorizontal size={14} /> Расширенный фильтр
+              </Link>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {regularTracks.slice(0, 6).map((track) => (
+                <div key={track.id} className="flex items-center justify-between p-3 rounded-xl bg-zinc-900/10 border border-white/[0.04] hover:bg-zinc-900/30 transition-all">
+                  <div className="flex items-center gap-4">
+                    <div className="h-12 w-12 rounded-lg bg-zinc-900 overflow-hidden">
+                      {track.image && <img src={track.image} className="w-full h-full object-cover" />}
                     </div>
-
-                    {/* Характеристики + Цена */}
-                    <div className="flex items-center gap-6 sm:gap-10">
-                      <div className="hidden sm:flex items-center gap-6 text-xs font-semibold text-zinc-400 dark:text-zinc-500">
-                        <span className="bg-zinc-100 dark:bg-zinc-800/80 px-2.5 py-1 rounded-md text-zinc-600 dark:text-zinc-400">
-                          {b.bpm} BPM
-                        </span>
-                        <span className="w-16 text-center">{b.musicKey}</span>
-                        <span className="w-16 text-right uppercase tracking-wider text-[10px] text-brand-red font-black">
-                          {b.genre?.name}
-                        </span>
-                      </div>
-
-                      <Link
-                        href={`/beats/${b.id}`}
-                        className="bg-zinc-900 hover:bg-brand-red dark:bg-zinc-100 dark:hover:bg-brand-red text-white dark:text-zinc-900 dark:hover:text-white px-4 py-2 rounded-xl font-bold text-xs tracking-tight transition-all active:scale-95 shadow-sm block text-center"
-                      >
-                        ${basePrice.toFixed(2)}
-                      </Link>
+                    <div>
+                      <h4 className="text-sm font-medium text-white">{track.title}</h4>
+                      <p className="text-xs text-zinc-500 font-mono">{track.bpm} BPM</p>
                     </div>
                   </div>
-                )
-              })
-            )}
-          </div>
-        </div>
+                  <Link href={`/beats/${track.id}`} className="h-8 px-4 bg-white/[0.03] hover:bg-white hover:text-black rounded-lg text-xs font-medium transition-all flex items-center">
+                    Купить ${track.licenses[0]?.price.toFixed(2) || "0.00"}
+                  </Link>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
+        {/* СЭМПЛ-ПАКИ */}
+        {producer.soundPacks.length > 0 && (
+          <section className="w-full space-y-6">
+            <h2 className="text-2xl font-semibold text-white">Сэмпл-паки</h2>
+            <SoundPackGrid packs={producer.soundPacks as any} />
+          </section>
+        )}
       </div>
     </div>
   )

@@ -14,3 +14,27 @@
 }
 .animate-slide-in { animation: slideIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
 .animate-fade-in { animation: fadeIn 0.2s ease-out forwards; }
+@layer utilities {
+  /* Скрытие скроллбара для Chromium, Safari и Edge */
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+  /* Скрытие скроллбара для Firefox */
+  .scrollbar-none {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
+/* Принудительно заставляем браузер включать внутренние отступы в общую ширину элементов */
+*, ::before, ::after {
+  box-sizing: border-box;
+}
+
+/* Железная блокировка прокрутки по горизонтали на уровне ядра рендеринга */
+html, body {
+  max-w: 100% !important;
+  overflow-x: hidden !important;
+  width: 100% !important;
+  margin: 0;
+  padding: 0;
+}

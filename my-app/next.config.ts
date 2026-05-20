@@ -8,6 +8,10 @@ const nextConfig: NextConfig = {
 
         hostname: "images.unsplash.com",
       },
+      {
+        protocol: 'https',
+        hostname: 'picsum.photos', // Разрешаем ссылки от faker.image.url()
+      },
     ],
   },
 }

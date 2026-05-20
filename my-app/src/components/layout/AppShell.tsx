@@ -1,55 +1,49 @@
 "use client"
 
-import { useState } from "react"
-import AppSidebar from "./AppSidebar"
 import AppHeader from "./AppHeader"
-import MobileBottomNav from "./MobileBottomNav"
 import AppFooter from "./AppFooter"
-import GlobalSearchModal from "@/components/GlobalSearchModal"
+import MobileBottomNav from "./MobileBottomNav"
+import AppSidebar from "./AppSidebar"
+import { UIProvider } from "@/context/UIContext"
+import { CartProvider } from "@/context/CartContext" // Импортируем провайдер корзины
 
-export default function AppShell({
-  children,
-}: {
+interface AppShellProps {
   children: React.ReactNode
-}) {
-  const [searchOpen, setSearchOpen] = useState(false)
-  const [sidebarOpen, setSidebarOpen] = useState(false)
+}
 
+function ShellContent({ children }: AppShellProps) {
   return (
-    <>
-      <div className="flex min-h-screen bg-transparent text-zinc-950 dark:text-zinc-50 antialiased selection:bg-brand-red selection:text-white">
-        
-        <div className="flex min-w-0 flex-1 flex-col relative">
-          <AppHeader 
-            onSearchOpen={() => setSearchOpen(true)} 
-            onSidebarToggle={() => setSidebarOpen(!sidebarOpen)}
-          />
+    <div className="relative z-10 flex min-h-screen flex-col w-full overflow-x-hidden">
+      <AppHeader />
+      
+      {/* Сайдбар теперь накладывается поверх как стеклянный виджет */}
+      <AppSidebar />
+      
+      {/* ИСПРАВЛЕНО: Никаких сдвигов интерфейса, разметка всегда стабильна (w-full) */}
+      <main className="flex-1 w-full flex flex-col z-10">
+        {children}
+      </main>
 
-          {/* ИСПРАВЛЕНО: Добавлены классы p-0 m-0, чтобы исключить любые 
-            внутренние/внешние отступы, которые могут прилетать из страниц.
-            Теперь контент {children} (и наш баннер) встанет ровно в стык к AppHeader.
-          */}
-          <main className="flex-1 bg-transparent p-0 m-0 block">
-            {children}
-          </main>
+      <AppFooter />
+    </div>
+  )
+}
 
-          {/* Вставляем стеклянный футер строго внизу структуры */}
-          <AppFooter />
+export default function AppShell({ children }: AppShellProps) {
+  return (
+    <UIProvider>
+      <CartProvider> {/* Оборачиваем здесь */}
+        <div className="relative min-h-screen bg-[#07080b] text-zinc-300 font-sans antialiased selection:bg-white/10 selection:text-white max-w-full overflow-x-hidden">
+          {/* Жидкий бэкграунд */}
+          <div className="absolute inset-0 bg-[radial-gradient(#ffffff02_1px,transparent_1px)] [background-size:24px_24px] pointer-events-none z-0" />
+          <div className="absolute top-[-10%] left-1/4 w-[500px] h-[500px] bg-purple-600/5 rounded-full blur-[140px] pointer-events-none z-0 animate-[pulse_8s_infinite]" />
+          <div className="absolute bottom-[10%] right-1/4 w-[600px] h-[600px] bg-blue-600/4 rounded-full blur-[160px] pointer-events-none z-0 animate-[pulse_10s_infinite]" />
+          
+          <ShellContent>{children}</ShellContent>
+            
+          <MobileBottomNav />
         </div>
-
-      </div>
-
-      <AppSidebar 
-        isOpen={sidebarOpen} 
-        onClose={() => setSidebarOpen(false)} 
-      />
-
-      <MobileBottomNav />
-
-      <GlobalSearchModal
-        isOpen={searchOpen}
-        onClose={() => setSearchOpen(false)}
-      />
-    </>
+      </CartProvider>
+    </UIProvider>
   )
 }

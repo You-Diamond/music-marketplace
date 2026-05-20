@@ -7,7 +7,9 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// --- ENUMS ---
+// ==========================================
+// --- ENUMS (ПЕРЕЧИСЛЕНИЯ) ---
+// ==========================================
 
 enum Role {
   USER
@@ -15,22 +17,31 @@ enum Role {
   ADMIN
 }
 
+enum SoundPackCategory {
+  DRUMKITS
+  LOOPS
+  PRESETS
+}
+
 enum NotificationType {
   LIKE
-  PURCHASE
+  INQUIRY_RECEIVED // Новый лид/запрос для продюсера
+  INQUIRY_UPDATED // Изменение статуса запроса для покупателя
   FOLLOW
   PLAYLIST
-  MESSAGE
+  SYSTEM
 }
 
-enum OrderStatus {
-  PENDING
-  COMPLETED
-  CANCELLED
-  REFUNDED
+// Статусы обработки запроса на покупку внутри нашей CRM-системы
+enum InquiryStatus {
+  PENDING // Запрос отправлен артистом, ожидает ответа продюсера
+  CONTACTED // Продюсер нажал кнопку и связался с покупателем напрямую
+  COMPLETED // Сделка успешно закрыта, деньги переведены на карту продюсера
+  DECLINED // Продюсер отклонил запрос (например, бит уже продан эксклюзивно)
+  ARCHIVED // Архивный или неактуальный запрос
 }
 
-// Новый Enum для четкой типизации типов файлов в лицензиях
+// Четкая типизация файлов, привязанных к шаблонам контрактов
 enum LicenseFileType {
   MP3_TAGGED
   MP3_UNTAGGED
@@ -38,102 +49,247 @@ enum LicenseFileType {
   STEMS
 }
 
-// --- CORE MODELS ---
+// Состояния PRO-подписки создателя на нашу платформу
+enum SubscriptionStatus {
+  INACTIVE // Подписка не оформлялась или полностью истекла
+  ACTIVE // Подписка оплачена и активна
+  PAST_DUE // Ошибка автопродления (карта пуста), ожидает повторного списания
+  CANCELED // Отменена пользователем, но действует до конца оплаченного периода
+}
+
+enum OrderStatus {
+  PENDING_PAYMENT // Ожидает оплаты (создан запрос)
+  PAYMENT_SUBMITTED // Покупатель прикрепил чек, ждет подтверждения от продавца
+  PAID // Продавец подтвердил, файлы доступны для скачивания
+  COMPLETED // Покупатель подтвердил получение файлов, сделка закрыта
+  DISPUTE // Открыт спор, на рассмотрении модератора
+  CANCELLED // Отменен
+}
+
+// ==========================================
+// --- CORE MODELS (ОСНОВНЫЕ МОДЕЛИ) ---
+// ==========================================
 
 model User {
-  id             String   @id @default(uuid())
-  email          String   @unique
-  username       String   @unique
-  displayName    String?
-  role           Role     @default(USER)
-  
-  avatar         String?
-  biography      String?
-  location       String?
-  verified       Boolean  @default(false)
-  
-  isTopProducer  Boolean  @default(false)
+  id          String  @id @default(uuid())
+  email       String  @unique
+  username    String  @unique
+  password    String? // Хэш пароля (nullable на случай будущего добавления OAuth/Google)
+  displayName String?
+  role        Role    @default(USER)
 
-  followersCount Int      @default(0)
-  totalPlays     Int      @default(0)
-  
-  settings       Json?     
+  // Визуальное оформление и позиционирование
+  avatar        String?
+  biography     String?
+  location      String?
+  verified      Boolean @default(false) // Системная "галочка" верификации
+  isTopProducer Boolean @default(false) // Вывод автора на главную страницу в топ
 
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  // Прямые каналы связи для совершения сделок напрямую вне платформы
+  telegram  String?
+  instagram String?
+  vkontakte String?
+  website   String?
+  paymentDetails String?
 
-  subscriptionId String?
-  subscription   SubscriptionPlan? @relation(fields: [subscriptionId], references: [id])
+  // Счетчики популярности
+  followersCount Int @default(0)
+  totalPlays     Int @default(0)
 
-  // Связи
+  settings  Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // ----------------------------------------------------
+  // ПОДПИСКА НА ПЛАТФОРМУ (SaaS логика ограничений)
+  // ----------------------------------------------------
+  subscriptionId        String?
+  subscription          SubscriptionPlan?  @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  subscriptionStatus    SubscriptionStatus @default(INACTIVE)
+  subscriptionExpiresAt DateTime? // Точная дата и время, когда нужно отключить PRO-функции
+  paymentCustomerId     String? // Уникальный ID покупателя в платежной системе (для рекуррентных платежей)
+  paymentSubscriptionId String? // ID подписки на стороне эквайринга (для отмены/продления по Webhook)
+
+  // Реляционные связи контента
   tracks           Track[]
   soundPacks       SoundPack[]
   likes            Like[]
-  orders           Order[]
   notifications    Notification[]
-  // Глобальные шаблоны лицензий, настроенные этим продюсером
-  licenseTemplates LicenseTemplate[] 
+  licenseTemplates LicenseTemplate[]
+  playlists        Playlist[]
+  cartItems CartItem[]
+
+  // Связи с запросами на покупку (как покупатель и как продавец)
+  sentInquiries     Inquiry[] @relation("BuyerInquiries")
+  receivedInquiries Inquiry[] @relation("ProducerInquiries")
+
+  //Фоловеры
+  following Follow[] @relation("Following")
+  followers Follow[] @relation("Followers")
+
+  //Ордеры
+  ordersAsBuyer  Order[]       @relation("BuyerOrders")
+  ordersAsSeller Order[]       @relation("SellerOrders")
+  messages       ChatMessage[]
+  disputes       Dispute[]
+}
+
+model Order {
+  id           String      @id @default(uuid())
+  buyerId      String
+  sellerId     String
+  status       OrderStatus @default(PENDING_PAYMENT)
+  paymentProof String? // Ссылка на скриншот чека об оплате
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  buyer  User @relation("BuyerOrders", fields: [buyerId], references: [id])
+  seller User @relation("SellerOrders", fields: [sellerId], references: [id])
+
+  items    OrderItem[]
+  messages ChatMessage[]
+  disputes Dispute[]
+
+  @@index([buyerId])
+  @@index([sellerId])
+}
+
+model CartItem {
+  id        String   @id @default(uuid())
+  userId    String
+  trackId   String
+  licenseId String
+
+  user      User     @relation(fields: [userId], references: [id])
+  track     Track    @relation(fields: [trackId], references: [id])
+  license   License  @relation(fields: [licenseId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, trackId]) // Чтобы один трек не добавить дважды
+}
+
+model OrderItem {
+  id        String @id @default(uuid())
+  orderId   String
+  trackId   String
+  licenseId String // Какая лицензия была выбрана
+
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  track   Track   @relation(fields: [trackId], references: [id])
+  license License @relation(fields: [licenseId], references: [id])
+}
+
+model ChatMessage {
+  id        String   @id @default(uuid())
+  orderId   String
+  senderId  String
+  text      String
+  isSystem  Boolean  @default(false) // Для сообщений типа "Покупатель отметил заказ как оплаченный"
+  createdAt DateTime @default(now())
+
+  order  Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  sender User  @relation(fields: [senderId], references: [id])
+}
+
+model Dispute {
+  id         String    @id @default(uuid())
+  orderId    String
+  raisedById String // Кто открыл спор (обычно покупатель)
+  reason     String // Описание проблемы
+  createdAt  DateTime  @default(now())
+  resolvedAt DateTime?
+
+  order    Order @relation(fields: [orderId], references: [id])
+  raisedBy User  @relation(fields: [raisedById], references: [id])
+}
+
+model Follow {
+  id          String @id @default(uuid())
+  followerId  String
+  followingId String
+
+  follower  User @relation("Following", fields: [followerId], references: [id])
+  following User @relation("Followers", fields: [followingId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@unique([followerId, followingId]) // Чтобы нельзя было подписаться дважды
+  @@index([followerId])
+  @@index([followingId])
 }
 
 model Track {
-  id                 String   @id @default(uuid())
-  title              String
-  bpm                Int
-  musicKey           String
-  image              String?
-  audio              String   // URL на аудиофайл
-  duration           Int      // В секундах
-  plays              Int      @default(0)
-  downloads          Int      @default(0)
-  
-  featured           Boolean  @default(false) 
-  isSpotlight        Boolean  @default(false) 
-  exclusiveAvailable Boolean  @default(true)
-  isActive           Boolean  @default(true)  
-  
-  tags               String[] 
+  id        String  @id @default(uuid())
+  title     String
+  bpm       Int
+  musicKey  String
+  image     String?
+  audio     String
+  duration  Int
+  plays     Int     @default(0)
+  downloads Int     @default(0)
 
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  featured           Boolean @default(false)
+  isSpotlight        Boolean @default(false)
+  exclusiveAvailable Boolean @default(true)
+  isActive           Boolean @default(true)
 
-  producerId         String
-  producer           User     @relation(fields: [producerId], references: [id], onDelete: Cascade)
-  
-  genreId            String
-  genre              Genre    @relation(fields: [genreId], references: [id], onDelete: Restrict)
-  
-  playlists          Playlist[] @relation("PlaylistTracks") 
-  
-  // Лицензии, примененные конкретно к этому треку
-  licenses           License[]
-  likes              Like[]
+  tags      String[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  producerId String
+  producer   User   @relation(fields: [producerId], references: [id], onDelete: Cascade)
+
+  genreId String
+  genre   Genre  @relation(fields: [genreId], references: [id], onDelete: Restrict)
+
+  // ДОБАВЛЕНО: Связь с настроениями (Многие-ко-многим для гибкости)
+  moods Mood[] @relation("TrackMoods")
+
+  playlists    Playlist[]    @relation("PlaylistTracks")
+  licenses     License[]
+  likes        Like[]
+  inquiryItems InquiryItem[]
+  orderItems   OrderItem[]
+  cartItems CartItem[]
 }
 
-// --- NEW HOMEPAGE & MODERATION MODELS ---
-
-model Genre {
+// ДОБАВЛЕНО: Новая модель для Настроений (Грустный, Агрессивный, Энергичный и т.д.)
+model Mood {
   id        String   @id @default(uuid())
-  name      String   @unique 
-  slug      String   @unique 
-  isActive  Boolean  @default(true) 
+  name      String   @unique // "Агрессивный", "Грустный"
+  slug      String   @unique // "dark", "sad", "energetic"
   createdAt DateTime @default(now())
-  
-  tracks    Track[]
 
-  @@map("genre")
+  tracks    Track[]    @relation("TrackMoods")
+  playlists Playlist[] @relation("PlaylistMoods")
+
+  @@map("mood")
 }
 
 model Playlist {
   id          String   @id @default(uuid())
   title       String
   description String?
-  image       String?  
-  isFeatured  Boolean  @default(false) 
-  isActive    Boolean  @default(true)  
+  image       String?
+  isFeatured  Boolean  @default(false)
+  isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  tracks      Track[]  @relation("PlaylistTracks")
+  tracks Track[] @relation("PlaylistTracks")
+
+  // ДОБАВЛЕНО: Связь с настроениями для фильтрации "По настроению"
+  moods Mood[] @relation("PlaylistMoods")
+
+  // ДОБАВЛЕНО: Тип плейлиста для фильтра в сайдбаре ("featured", "albums", "moods")
+  type       String  @default("moods")
+  producerId String? // Добавь это
+  producer   User?   @relation(fields: [producerId], references: [id]) // И это
+  // Если нужно поле приватности:
+  isPrivate  Boolean @default(false)
 
   @@map("playlist")
 }
@@ -144,132 +300,157 @@ model SoundPack {
   price       Float
   image       String?
   soundsCount Int      @default(0)
-  isFeatured  Boolean  @default(false) 
-  isActive    Boolean  @default(true)  
+  isFeatured  Boolean  @default(false)
+  isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
 
-  producerId  String
-  producer    User     @relation(fields: [producerId], references: [id], onDelete: Cascade)
+  // ДОБАВЛЕНО: Категория пака
+  category SoundPackCategory @default(DRUMKITS)
+
+  producerId String
+  producer   User   @relation(fields: [producerId], references: [id], onDelete: Cascade)
 
   @@map("soundpack")
 }
 
-// --- LICENSES & CONTRACTS ---
+model Genre {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  slug      String   @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
 
-// 1. Глобальный шаблон лицензии продюсера
-model LicenseTemplate {
-  id              String          @id @default(uuid())
-  name            String          // Название (например, "Basic MP3 Lease")
-  slug            String          // Уникальный идентификатор типа ("mp3", "wav", "stems", "exclusive")
-  defaultPrice    Float           // Базовая цена по умолчанию
-  fileType        LicenseFileType @default(MP3_TAGGED)
-  isDefaultActive Boolean         @default(true) // Включать ли автоматом для новых треков
+  tracks Track[]
 
-  // Юридический блок контракта (Contract info)
-  // Int? означает, что поле может быть null, что в коде мы интерпретируем как "Unlimited"
-  
-  // Territory
-  arbitrationCountry       String  @default("United States")
-  governingLawCountry      String  @default("United States")
-
-  // Distribution
-  termYears                Int?    // null = Unlimited
-  distributionCopies       Int?    // null = Unlimited
-  audioStreams             Int?    // null = Unlimited
-  freeDownloads            Int?    // null = Unlimited
-
-  // Music videos
-  musicVideosMonetized     Int?    // null = Unlimited
-  musicVideosNonMonetized  Int?    // null = Unlimited
-  videoStreamsMonetized    Int?    // null = Unlimited
-  videoStreamsNonMonetized Int?    // null = Unlimited
-
-  // Radio broadcasting
-  radioBroadcastingRights  Boolean @default(false)
-  radioStations            Int?    // null = Unlimited
-
-  // Live performances
-  livePerformancesForProfit Boolean @default(false)
-  livePerformancesNonProfit Int?    // null = Unlimited
-
-  // Связь с продюсером
-  producerId      String
-  producer        User            @relation(fields: [producerId], references: [id], onDelete: Cascade)
-  
-  // Связь со всеми инстансами на треках
-  trackLicenses   License[]
-
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
+  @@map("genre")
 }
 
-// 2. Конкретная лицензия, привязанная к треку
-model License {
-  id        String   @id @default(uuid())
-  price     Float    // Цена для Конкретного трека (по умолчанию берется из шаблона, но юзер может изменить)
-  isActive  Boolean  @default(true) // Флаг активности лицензии для этого трека (Вкладка 3 матрицы)
+// ==========================================
+// --- LICENSES & CONTRACTS (КОНТРАКТЫ) ---
+// ==========================================
 
-  trackId   String
-  track     Track    @relation(fields: [trackId], references: [id], onDelete: Cascade)
+model LicenseTemplate {
+  id              String          @id @default(uuid())
+  name            String // Название ("Standard WAV Lease", "Exclusive Contract")
+  slug            String // Машиночитаемый тип ("mp3", "wav", "stems", "exclusive")
+  defaultPrice    Float // Цена по умолчанию
+  fileType        LicenseFileType @default(MP3_TAGGED)
+  isDefaultActive Boolean         @default(true)
+
+  // Юридические параметры контракта, которые подставляются в бланк лида
+  arbitrationCountry        String  @default("Russia")
+  governingLawCountry       String  @default("Russia")
+  termYears                 Int? // null = Безлимитный срок
+  distributionCopies        Int? // Макс. тираж копий
+  audioStreams              Int? // Макс. стримы (Spotify/Apple Music)
+  freeDownloads             Int?
+  musicVideosMonetized      Int?
+  musicVideosNonMonetized   Int?
+  videoStreamsMonetized     Int?
+  videoStreamsNonMonetized  Int?
+  radioBroadcastingRights   Boolean @default(false)
+  radioStations             Int?
+  livePerformancesForProfit Boolean @default(false)
+  livePerformancesNonProfit Int?
+
+  producerId    String
+  producer      User      @relation(fields: [producerId], references: [id], onDelete: Cascade)
+  trackLicenses License[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model License {
+  id       String  @id @default(uuid())
+  price    Float // Кастомная цена лицензии, если продюсер переопределил её для этого трека
+  isActive Boolean @default(true)
+
+  trackId String
+  track   Track  @relation(fields: [trackId], references: [id], onDelete: Cascade)
 
   templateId String
   template   LicenseTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
 
-  orderItems OrderItem[]
+  inquiryItems InquiryItem[]
+  orderItems   OrderItem[]
+  cartItems CartItem[]
 
-  @@unique([trackId, templateId]) // У одного трека не может быть двух одинаковых типов лицензий
+  @@unique([trackId, templateId])
 }
 
 model Like {
   id        String   @id @default(uuid())
   createdAt DateTime @default(now())
 
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  trackId   String
-  track     Track    @relation(fields: [trackId], references: [id], onDelete: Cascade)
+  trackId String
+  track   Track  @relation(fields: [trackId], references: [id], onDelete: Cascade)
 
   @@unique([userId, trackId])
 }
 
-// --- ORDERS & SUBSCRIPTIONS ---
+// ==========================================
+// --- CRM INQUIRIES (СИСТЕМА ЗАПРОСОВ) ---
+// ==========================================
 
-model Order {
-  id          String      @id @default(uuid())
-  totalAmount Float
-  status      OrderStatus @default(PENDING)
-  createdAt   DateTime    @default(now())
+model Inquiry {
+  id           String        @id @default(uuid())
+  status       InquiryStatus @default(PENDING)
+  message      String? // Сопроводительное сообщение/пожелание от артиста
+  buyerContact String // Контактные данные покупателя (Ник в Telegram, Ссылка на соцсеть)
 
-  userId      String
-  user        User        @relation(fields: [userId], references: [id], onDelete: Restrict)
-  
-  items       OrderItem[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Покупатель (Артист)
+  buyerId String
+  buyer   User   @relation("BuyerInquiries", fields: [buyerId], references: [id], onDelete: Cascade)
+
+  // Продавец (Продюсер)
+  producerId String
+  producer   User   @relation("ProducerInquiries", fields: [producerId], references: [id], onDelete: Cascade)
+
+  items InquiryItem[]
 }
 
-model OrderItem {
-  id         String   @id @default(uuid())
-  priceAtBuy Float    
+model InquiryItem {
+  id             String @id @default(uuid())
+  priceAtInquiry Float // Снапшот цены на момент отправки запроса
 
-  orderId    String
-  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  inquiryId String
+  inquiry   Inquiry @relation(fields: [inquiryId], references: [id], onDelete: Cascade)
 
-  trackId    String?
-  licenseId  String?
-  license    License? @relation(fields: [licenseId], references: [id], onDelete: SetNull)
+  trackId String
+  track   Track  @relation(fields: [trackId], references: [id], onDelete: Cascade)
+
+  licenseId String?
+  license   License? @relation(fields: [licenseId], references: [id], onDelete: SetNull)
 }
+
+// ==========================================
+// --- SAAS SUBSCRIPTION PLANS (ТАРИФЫ) ---
+// ==========================================
 
 model SubscriptionPlan {
-  id           String   @id @default(uuid())
-  title        String
+  id           String  @id @default(uuid())
+  title        String // "FREE", "PRO_CREATOR", "ELITE_STUDIO"
   description  String
   monthlyPrice Float
   yearlyPrice  Float
-  popular      Boolean  @default(false)
-  features     Json     
+  popular      Boolean @default(false)
 
-  users        User[]
+  // Конфигурационный JSON лимитов (Пример: { "maxTracks": 5, "allowSpotlight": false, "keepExclusives": true })
+  features Json
+
+  users User[]
 }
+
+// ==========================================
+// --- SYSTEM UTILS (УВЕДОМЛЕНИЯ) ---
+// ==========================================
 
 model Notification {
   id          String           @id @default(uuid())
@@ -279,6 +460,6 @@ model Notification {
   read        Boolean          @default(false)
   createdAt   DateTime         @default(now())
 
-  userId      String
-  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

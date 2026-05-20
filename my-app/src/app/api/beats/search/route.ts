@@ -8,6 +8,7 @@ export async function GET(request: Request) {
     
     const query = searchParams.get("query") || ""
     const genreSlug = searchParams.get("genre")
+    const producerUsername = searchParams.get("producer") // Достаем продюсера из параметров
     const bpmMin = searchParams.get("bpmMin")
     const bpmMax = searchParams.get("bpmMax")
     const musicKey = searchParams.get("musicKey")
@@ -15,6 +16,9 @@ export async function GET(request: Request) {
     const order = searchParams.get("order") || "desc"
 
     const whereClause: Prisma.TrackWhereInput = {}
+
+    // Чтобы в каталоге отображались только активные биты
+    whereClause.isActive = true
 
     // Полнотекстовый поиск по названию или тегам
     if (query) {
@@ -28,6 +32,13 @@ export async function GET(request: Request) {
     if (genreSlug && genreSlug !== "all") {
       whereClause.genre = {
         slug: genreSlug
+      }
+    }
+
+    // Фильтр по юзернейму продюсера (Связываем с фронтендом профиля)
+    if (producerUsername) {
+      whereClause.producer = {
+        username: producerUsername
       }
     }
 
