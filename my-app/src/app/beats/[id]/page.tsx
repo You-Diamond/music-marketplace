@@ -44,9 +44,9 @@ export default async function TrackPage({ params }: PageProps) {
     return `${m}:${s.toString().padStart(2, '0')}`
   }
 
-  // ИСПРАВЛЕНИЕ: Параметр 'l' теперь автоматически типизирован как элемент массива licenses
+  // ИСПРАВЛЕНИЕ: Используем оператор ?? Infinity для безопасного вычисления минимальной цены
   const startingPrice = track.licenses.length > 0 
-    ? Math.min(...track.licenses.map((l) => l.price)) 
+    ? Math.min(...track.licenses.map((l) => l.price ?? Infinity)) 
     : 0
 
   return (
@@ -74,7 +74,7 @@ export default async function TrackPage({ params }: PageProps) {
                 {track.genre.name}
               </span>
               <span className="px-2.5 py-1 rounded-md bg-white/[0.05] border border-white/[0.05] text-[10px] font-medium tracking-wider text-amber-400 uppercase">
-                От ${startingPrice}
+                От ${startingPrice === Infinity ? 0 : startingPrice}
               </span>
             </div>
             
@@ -110,7 +110,6 @@ export default async function TrackPage({ params }: PageProps) {
           </div>
 
           <div className="space-y-4">
-            {/* ИСПРАВЛЕНИЕ: Параметр 'license' теперь типизирован */}
             {track.licenses.map((license) => (
               <div key={license.id} className="p-5 rounded-2xl bg-zinc-900/30 border border-white/[0.04] hover:border-white/[0.1] hover:bg-zinc-900/50 transition-all flex flex-col sm:flex-row items-center justify-between gap-4">
                 <div className="flex-1 text-center sm:text-left">
@@ -119,7 +118,7 @@ export default async function TrackPage({ params }: PageProps) {
                 </div>
                 
                 <div className="flex items-center gap-4 w-full sm:w-auto">
-                  <div className="text-2xl font-mono font-bold text-white">${license.price}</div>
+                  <div className="text-2xl font-mono font-bold text-white">${license.price ?? 0}</div>
                   <button className="w-full sm:w-auto h-12 px-6 rounded-xl bg-white text-black font-semibold hover:bg-zinc-200 transition-colors flex items-center justify-center gap-2">
                     <ShoppingBag className="h-4 w-4" /> В корзину
                   </button>

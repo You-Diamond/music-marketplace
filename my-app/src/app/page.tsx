@@ -111,11 +111,14 @@ export default async function Home() {
 
   const dailySpotlightTracks = getDailyTracks(formattedSpotlightTracks)
 
-  // ИСПРАВЛЕНИЕ: Вычисляем `startingPrice` для трендовых треков
+  // ИСПРАВЛЕНИЕ: Вычисляем `startingPrice` для трендовых треков с защитой от null
   const formattedTrendingTracks = (trendingTracks || []).map(track => {
-    // Ищем самую минимальную стоимость среди привязанных лицензий
-    const prices = track.licenses.map(l => l.price)
-    const startingPrice = prices.length > 0 ? Math.min(...prices) : 0
+    // Ищем самую минимальную стоимость среди привязанных лицензий, заменяя null на Infinity
+    const prices = track.licenses.map(l => l.price ?? Infinity)
+    const minPrice = prices.length > 0 ? Math.min(...prices) : 0
+    
+    // Если минимальная цена осталась Infinity (все лицензии null), превращаем её в 0
+    const startingPrice = minPrice === Infinity ? 0 : minPrice
 
     return {
       ...track,

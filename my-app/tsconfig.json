@@ -35,6 +35,6 @@
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
     "**/*.mts"
-, "src/app/studio/layout.tsx.bak"  ],
+, "src/app/studio/layout.tsx.bak", "prisma/seed"  ],
   "exclude": ["node_modules"]
 }

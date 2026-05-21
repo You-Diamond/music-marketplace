@@ -44,7 +44,7 @@ export async function GET() {
           name: "Basic Lease",
           slug: "basic",
           defaultPrice: 29.99,
-          fileType: "MP3_TAGGED",
+          fileType: "MP3",
           producerId: defaultProducer.id,
           distributionCopies: 5000
         }

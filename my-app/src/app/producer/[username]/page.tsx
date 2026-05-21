@@ -108,7 +108,7 @@ export default async function ProducerProfilePage({
           </section>
         )}
 
-        {/* ПЛЕЙЛИСТЫ (ИНТЕГРИРОВАНО) */}
+        {/* ПЛЕЙЛИСТЫ */}
         {Array.isArray(producer.playlists) && producer.playlists.length > 0 && (
         <section className="w-full">
           <FeaturedPlaylists playlists={producer.playlists as any} />
@@ -137,7 +137,8 @@ export default async function ProducerProfilePage({
                     </div>
                   </div>
                   <Link href={`/beats/${track.id}`} className="h-8 px-4 bg-white/[0.03] hover:bg-white hover:text-black rounded-lg text-xs font-medium transition-all flex items-center">
-                    Купить ${track.licenses[0]?.price.toFixed(2) || "0.00"}
+                    {/* ИСПРАВЛЕНИЕ: Безопасно получаем цену лицензии и форматируем число */}
+                    Купить ${(track.licenses[0]?.price ?? 0).toFixed(2)}
                   </Link>
                 </div>
               ))}

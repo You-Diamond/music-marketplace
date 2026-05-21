@@ -31,7 +31,8 @@ export default async function StudioInquiriesPage({
   let actionRequiredCount = 0 // Статус PAYMENT_SUBMITTED (Покупатель прислал чек)
 
   allProducerOrders.forEach(order => {
-    const orderTotal = order.items.reduce((sum, item) => sum + item.license.price, 0)
+    // ИСПРАВЛЕНИЕ: Добавляем оператор ?? 0 для безопасного сложения цены, которая может быть null
+    const orderTotal = order.items.reduce((sum, item) => sum + (item.license.price ?? 0), 0)
     
     if (order.status === "PAID" || order.status === "COMPLETED") {
       totalEarnings += orderTotal
@@ -138,7 +139,8 @@ export default async function StudioInquiriesPage({
               <tbody className="divide-y divide-white/[0.03] text-xs">
                 {orders.map((order) => {
                   const trackTitles = order.items.map((i) => i.track.title).join(", ")
-                  const orderTotal = order.items.reduce((sum, item) => sum + item.license.price, 0)
+                  // ИСПРАВЛЕНИЕ: Также защищаем калькулятор суммы внутри метода .map() для таблицы
+                  const orderTotal = order.items.reduce((sum, item) => sum + (item.license.price ?? 0), 0)
 
                   return (
                     <tr key={order.id} className="hover:bg-white/[0.01] transition-colors group">
@@ -176,17 +178,16 @@ export default async function StudioInquiriesPage({
                           order.status === "COMPLETED" ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" :
                           "bg-red-500/10 text-red-400 border border-red-500/20"
                         }`}>
-                          {order.status === "PAYMENT_SUBMITTED" ? "Ждет проверки" : order.status}
+                          {order.status}
                         </span>
                       </td>
 
                       <td className="p-4 text-right">
-                        <Link
+                        <Link 
                           href={`/studio/inquiries/${order.id}`}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/[0.03] border border-white/[0.06] text-[10px] font-mono uppercase tracking-wider text-zinc-400 group-hover:text-white group-hover:bg-red-600 group-hover:border-transparent transition-all"
+                          className="inline-flex items-center gap-1.5 h-8 px-3.5 rounded-xl bg-white/[0.03] border border-white/[0.05] text-zinc-300 hover:text-white hover:bg-white/[0.08] font-medium transition-all text-[11px]"
                         >
-                          Открыть чат
-                          <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+                          Детали <ArrowRight className="h-3 w-3" />
                         </Link>
                       </td>
                     </tr>

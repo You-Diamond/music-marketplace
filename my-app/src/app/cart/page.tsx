@@ -33,8 +33,8 @@ export default async function CartPage() {
     }
   })
 
-  // Считаем сумму
-  const cartTotal = cartItems.reduce((sum, item) => sum + item.license.price, 0)
+  // ИСПРАВЛЕНИЕ: Безопасно складываем цены, заменяя null на 0
+  const cartTotal = cartItems.reduce((sum, item) => sum + (item.license.price ?? 0), 0)
 
   // СОСТОЯНИЕ: КОРЗИНА ПУСТА
   if (cartItems.length === 0) {
@@ -118,7 +118,8 @@ export default async function CartPage() {
               {/* Правая часть: Цена и Кнопка удаления */}
               <div className="flex items-center gap-4 md:gap-6 shrink-0">
                 <span className="text-xs md:text-sm font-mono font-black text-white bg-white/[0.02] border border-white/[0.04] px-3 py-1 rounded-xl">
-                  {item.license.price} ₽ {/* Изменили на рубли для РФ рынка */}
+                  {/* ИСПРАВЛЕНИЕ: Безопасный вывод цены отдельного товара */}
+                  {item.license.price ?? 0} ₽ 
                 </span>
                 <RemoveFromCartButton itemId={item.id} />
               </div>
