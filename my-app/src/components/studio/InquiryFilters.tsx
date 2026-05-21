@@ -2,13 +2,14 @@
 
 import { useRouter, useSearchParams } from "next/navigation"
 
+// Строгое соответствие enum InquiryStatus из schema.prisma
 const statuses = [
-  { label: "Все", value: "ALL" },
-  { label: "Ожидают оплаты", value: "PENDING_PAYMENT" },
-  { label: "Чек получен", value: "PAYMENT_SUBMITTED" },
-  { label: "Оплачено", value: "PAID" },
-  { label: "Завершено", value: "COMPLETED" },
-  { label: "Споры", value: "DISPUTE" },
+  { label: "Все лиды", value: "ALL" },
+  { label: "Новые запросы", value: "PENDING" },
+  { label: "В работе (Связался)", value: "CONTACTED" },
+  { label: "Успешная сделка", value: "COMPLETED" },
+  { label: "Отклонено", value: "DECLINED" },
+  { label: "Архив", value: "ARCHIVED" },
 ]
 
 export default function InquiryFilters() {
@@ -36,8 +37,8 @@ export default function InquiryFilters() {
             onClick={() => handleStatusChange(status.value)}
             className={`px-3 py-1.5 rounded-xl text-[11px] font-mono uppercase tracking-wider border transition-all ${
               isActive
-                ? "bg-red-600/10 text-red-400 border-red-500/30 font-bold"
-                : "bg-white/[0.01] text-zinc-500 border-white/[0.04] hover:text-zinc-300 hover:border-white/[0.1]"
+                ? "bg-red-600 border-transparent text-white shadow-[0_0_15px_rgba(220,38,38,0.15)]"
+                : "bg-white/[0.01] border-white/[0.05] text-zinc-400 hover:text-white hover:bg-white/[0.03]"
             }`}
           >
             {status.label}

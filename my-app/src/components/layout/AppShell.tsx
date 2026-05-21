@@ -6,6 +6,7 @@ import MobileBottomNav from "./MobileBottomNav"
 import AppSidebar from "./AppSidebar"
 import { UIProvider } from "@/context/UIContext"
 import { CartProvider } from "@/context/CartContext" // Импортируем провайдер корзины
+import { Toaster } from "sonner";
 
 interface AppShellProps {
   children: React.ReactNode
@@ -23,7 +24,7 @@ function ShellContent({ children }: AppShellProps) {
       <main className="flex-1 w-full flex flex-col z-10">
         {children}
       </main>
-
+        <Toaster position="bottom-center" richColors />
       <AppFooter />
     </div>
   )

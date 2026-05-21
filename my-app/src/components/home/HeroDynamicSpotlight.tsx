@@ -264,7 +264,7 @@ const handleAddToCart = async (e: React.MouseEvent) => {
                 </Link>
                 
                 <Link 
-                  href={`/user/${currentTrack.producer.username}`}
+                  href={`/producer/${currentTrack.producer.username}`}
                   className="block w-full"
                   onMouseEnter={() => setIsAuthorHovered(true)}
                   onMouseLeave={() => setIsAuthorHovered(false)}

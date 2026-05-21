@@ -3,7 +3,8 @@ import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { seedDefaultTemplates } from "@/app/actions/licenses"
 import LicenseCardForm from "@/components/studio/LicenseCardForm"
-import { ShieldAlert, Scale } from "lucide-react"
+import CreateLicenseButton from "@/components/studio/CreateLicenseButton" // Импортируем нашу новую кнопку
+import { Scale } from "lucide-react"
 
 export default async function StudioLicensesPage() {
   const session = await auth()
@@ -15,7 +16,7 @@ export default async function StudioLicensesPage() {
     orderBy: { defaultPrice: "asc" }
   })
 
-  // Если у продюсера еще нет ни одного шаблона, генерируем базовый набор
+  // Если у продюсера еще нет ни одного шаблона, генерируем базовый набор (Золотое трио)
   if (templates.length === 0) {
     await seedDefaultTemplates(session.user.id)
     templates = await prisma.licenseTemplate.findMany({
@@ -40,11 +41,14 @@ export default async function StudioLicensesPage() {
         </p>
       </div>
 
-      {/* Сетка контрактов */}
+      {/* Сетка контрактов с поддержкой добавления кастомных шаблонов через SaaS */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
         {templates.map((template) => (
           <LicenseCardForm key={template.id} template={template} />
         ))}
+        
+        {/* Кнопка создания новой лицензии со встроенным пейволлом */}
+        <CreateLicenseButton />
       </div>
     </div>
   )

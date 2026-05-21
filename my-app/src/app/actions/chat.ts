@@ -65,54 +65,58 @@ export async function submitPaymentProof(orderId: string, proofUrl: string) {
 }
 
 // 3. Изменение статуса ордера (для Продюсера или Модератора)
-export async function updateOrderStatus(orderId: string, newStatus: any) {
-  const session = await auth()
-  if (!session?.user?.id) return { success: false, error: "Не авторизован" }
-
+export async function updateOrderStatus(orderId: string, newStatus: string) {
   try {
+    const session = await auth()
+    if (!session?.user?.id) return { success: false, error: "Не авторизован" }
+
+    // Используем транзакцию для безопасности
     await prisma.$transaction(async (tx) => {
-      const order = await tx.order.findUnique({ where: { id: orderId } })
-      if (!order) throw new Error("Ордер не найден")
-
-      // Добавляем проверку на покупателя
-      const isBuyer = order.buyerId === session.user.id
-      const isSeller = order.sellerId === session.user.id
-      const isAdmin = session.user.role === "ADMIN"
-
-      // Разрешаем действие, если это участник сделки ИЛИ админ
-      // Если нужно ограничить, какой статус может ставить покупатель (например, только COMPLETED), 
-      // можно добавить условие: if (isBuyer && newStatus !== "COMPLETED") ...
-      if (!isSeller && !isAdmin && !isBuyer) throw new Error("Нет прав")
-
-      await tx.order.update({
+      // 1. Обновляем статус самого заказа
+      const order = await tx.order.update({
         where: { id: orderId },
-        data: { status: newStatus }
+        data: { status: newStatus as any },
+        include: { 
+          items: { 
+            include: { license: { include: { template: true } } } 
+          } 
+        }
       })
 
-      let systemText = `⚙️ Статус сделки изменен на: **${newStatus}**`
+      // 2. Если сделка успешно оплачена, проверяем на наличие Эксклюзива
       if (newStatus === "PAID") {
-        systemText = `✅ Продюсер подтвердил получение средств! Сделка переведена в статус PAID.`
-      } else if (newStatus === "COMPLETED") {
-        systemText = `🎉 Сделка успешно завершена обеими сторонами. Спасибо за сотрудничество!`
-      } else if (newStatus === "DISPUTE") {
-        systemText = `🚨 Открыт официальный спор.`
-      }
+        const hasExclusive = order.items.some(
+          item => item.license.template.slug === "exclusive"
+        )
 
+        // 3. Снимаем все треки из этого заказа с продажи
+        if (hasExclusive) {
+          for (const item of order.items) {
+            await tx.track.update({
+              where: { id: item.trackId },
+              data: { 
+                isActive: false, // Прячем из каталога платформы
+                exclusiveAvailable: false // Блокируем повторную продажу эксклюзива
+              }
+            })
+          }
+        }
+      }
+      
+      // Системное сообщение в чат
       await tx.chatMessage.create({
         data: {
-          orderId,
+          orderId: order.id,
           senderId: session.user.id,
-          text: systemText,
+          text: `Статус сделки изменен на: ${newStatus}`,
           isSystem: true
         }
       })
     })
 
-    revalidatePath(`/orders/${orderId}`)
-    revalidatePath(`/studio/inquiries/${orderId}`)
     return { success: true }
-  } catch (error: any) {
-    console.error("Ошибка смены статуса:", error)
-    return { success: false, error: error.message || "Ошибка смены статуса" }
+  } catch (error) {
+    console.error("Ошибка при обновлении статуса:", error)
+    return { success: false, error: "Ошибка при обновлении статуса" }
   }
 }

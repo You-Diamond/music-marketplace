@@ -5,7 +5,7 @@ import { useUI } from "@/context/UIContext"
 import { 
   X, LayoutDashboard, Settings, LogOut, 
   User, CreditCard, FolderHeart, 
-  MessageSquare, Sparkles, ShieldCheck, ShoppingBag 
+  MessageSquare, Sparkles, ShieldCheck, Music, Package, ShoppingBag 
 } from "lucide-react"
 import { signOut, useSession } from "next-auth/react"
 import { usePathname } from "next/navigation"
@@ -28,8 +28,10 @@ export default function AppSidebar() {
 
   const businessMenu = [
     { name: "Студия / CRM", href: "/studio", icon: LayoutDashboard, primary: true },
-    { name: "Запросы", href: "/inquiries", icon: MessageSquare },
-    { name: "Биллинг", href: "/billing", icon: CreditCard },
+    { name: "Мои треки", href: "/studio/tracks", icon: Music },
+    { name: "Запросы", href: "/studio/inquiries", icon: MessageSquare },
+    { name: "Лицензии", href: "/studio/licenses", icon: Package },
+    { name: "Настройки", href: "/studio/settings", icon: Settings },
   ]
 
   
@@ -167,8 +169,18 @@ export default function AppSidebar() {
                       businessMenu.map((item) => {
                         const active = pathname === item.href
                         return (
-                          <Link key={item.href} href={item.href} onClick={closeSidebar} className="...">
-                            {/* ... код ссылки ... */}
+                          <Link
+                            key={item.href}
+                            href={item.href}
+                            onClick={closeSidebar}
+                            className={`flex flex-col md:flex-row items-start md:items-center gap-2 md:gap-3 rounded-xl p-3 md:px-3 md:py-2.5 text-[10px] md:text-xs font-mono uppercase tracking-wider transition-all ${
+                              active 
+                                ? "bg-white/[0.04] text-white border border-white/[0.08] backdrop-blur-md" 
+                                : "bg-white/[0.01] border border-white/[0.02] md:bg-transparent md:border-transparent text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.02]"
+                            }`}
+                          >
+                            <item.icon className={`h-4 w-4 shrink-0 ${active ? "text-white" : "text-zinc-500"}`} />
+                            <span>{item.name}</span>
                           </Link>
                         )
                       })

@@ -7,23 +7,32 @@ export default async function NewTrackPage() {
   const session = await auth()
   if (!session?.user?.id || session.user.role !== "PRODUCER") redirect("/")
 
-  // Получаем список активных жанров для выпадающего списка
-  const genres = await prisma.genre.findMany({
-    where: { isActive: true },
-    select: { id: true, name: true },
-  })
+  // Получаем жанры, настроения и дефолтные шаблоны лицензий продюсера
+  const [genres, moods, licenseTemplates] = await Promise.all([
+    prisma.genre.findMany({ orderBy: { name: "asc" } }),
+    prisma.mood.findMany({ orderBy: { name: "asc" } }),
+    prisma.licenseTemplate.findMany({
+      where: { producerId: session.user.id },
+      orderBy: { defaultPrice: "asc" }
+    })
+  ])
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6 pb-12">
+    <div className="space-y-6 max-w-5xl mx-auto py-6">
       <div>
         <h1 className="text-2xl font-bold text-white uppercase tracking-wider">Загрузка нового бита</h1>
         <p className="text-zinc-500 text-xs mt-1">
-          Заполните метаданные и загрузите файлы. MP3-превью будет доступно для прослушивания всем, а WAV откроется покупателю после оплаты.
+          Заполните метаданные, загрузите аудиофайлы и настройте стоимость контрактов перед публикацией.
         </p>
       </div>
 
-      {/* Передаем жанры в клиентскую форму */}
-      <TrackFormClient genres={genres} />
+      {/* Передаем шаблоны лицензий в форму */}
+      <TrackFormClient 
+        genres={genres} 
+        moods={moods} 
+        licenseTemplates={licenseTemplates} 
+        initialData={null} 
+      />
     </div>
   )
 }

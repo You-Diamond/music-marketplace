@@ -41,13 +41,6 @@ enum InquiryStatus {
   ARCHIVED // Архивный или неактуальный запрос
 }
 
-// Четкая типизация файлов, привязанных к шаблонам контрактов
-enum LicenseFileType {
-  MP3_TAGGED
-  MP3_UNTAGGED
-  MP3_WAV
-  STEMS
-}
 
 // Состояния PRO-подписки создателя на нашу платформу
 enum SubscriptionStatus {
@@ -230,6 +223,9 @@ model Track {
   plays     Int     @default(0)
   downloads Int     @default(0)
 
+  wavUrl             String?  // Ссылка на HQ WAV файл
+  stemsUrl           String?  // Ссылка на архивы дорожек (Google Drive / Uploadthing)
+
   featured           Boolean @default(false)
   isSpotlight        Boolean @default(false)
   exclusiveAvailable Boolean @default(true)
@@ -333,9 +329,10 @@ model LicenseTemplate {
   id              String          @id @default(uuid())
   name            String // Название ("Standard WAV Lease", "Exclusive Contract")
   slug            String // Машиночитаемый тип ("mp3", "wav", "stems", "exclusive")
-  defaultPrice    Float // Цена по умолчанию
-  fileType        LicenseFileType @default(MP3_TAGGED)
+  defaultPrice    Float? // Теперь может быть null
+  fileType          LicenseFileType @default(MP3)
   isDefaultActive Boolean         @default(true)
+  isPriceNegotiable Boolean @default(false) // Если true, цена не отображается
 
   // Юридические параметры контракта, которые подставляются в бланк лида
   arbitrationCountry        String  @default("Russia")
@@ -361,9 +358,15 @@ model LicenseTemplate {
   updatedAt DateTime @updatedAt
 }
 
+enum LicenseFileType {
+  MP3             // Только MP3
+  MP3_WAV         // MP3 + HQ WAV
+  MP3_WAV_STEMS   // MP3 + HQ WAV + Дорожки (Stems)
+}
+
 model License {
   id       String  @id @default(uuid())
-  price    Float // Кастомная цена лицензии, если продюсер переопределил её для этого трека
+  price    Float?  // Изменено: Кастомная цена или null (если договорная)
   isActive Boolean @default(true)
 
   trackId String
@@ -418,7 +421,7 @@ model Inquiry {
 
 model InquiryItem {
   id             String @id @default(uuid())
-  priceAtInquiry Float // Снапшот цены на момент отправки запроса
+  priceAtInquiry Float? // Изменено: Снапшот цены на момент запроса (может быть null)
 
   inquiryId String
   inquiry   Inquiry @relation(fields: [inquiryId], references: [id], onDelete: Cascade)
@@ -462,4 +465,14 @@ model Notification {
 
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+
+// Таблица-очередь для отслеживания загруженных, но не привязанных к трекам файлов (защита от сирот)
+model UploadQueue {
+  id        String   @id @default(cuid())
+  fileKey   String   @unique
+  createdAt DateTime @default(now())
+
+  @@index([createdAt]) // Индекс для быстрого поиска старых файлов
 }
