@@ -5,12 +5,16 @@ const nextConfig: NextConfig = {
     remotePatterns: [
       {
         protocol: "https",
-
         hostname: "images.unsplash.com",
       },
       {
-        protocol: 'https',
-        hostname: 'picsum.photos', // Разрешаем ссылки от faker.image.url()
+        protocol: "https",
+        hostname: "picsum.photos",
+      },
+      {
+        protocol: "https",
+        hostname: "*.ufs.sh", // Разрешает любые поддомены Uploadthing
+        pathname: "/**",
       },
     ],
   },

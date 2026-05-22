@@ -7,8 +7,10 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     
     const query = searchParams.get("query") || ""
+    const tagsParam = searchParams.get("tags")
     const genreSlug = searchParams.get("genre")
-    const producerUsername = searchParams.get("producer") // Достаем продюсера из параметров
+    const moodSlug = searchParams.get("mood") // Получаем слаг выбранного настроения
+    const producerUsername = searchParams.get("producer")
     const bpmMin = searchParams.get("bpmMin")
     const bpmMax = searchParams.get("bpmMax")
     const musicKey = searchParams.get("musicKey")
@@ -17,15 +19,22 @@ export async function GET(request: Request) {
 
     const whereClause: Prisma.TrackWhereInput = {}
 
-    // Чтобы в каталоге отображались только активные биты
+    // Отображаем только активные биты
     whereClause.isActive = true
 
-    // Полнотекстовый поиск по названию или тегам
+    // Текстовый поиск по названию
     if (query) {
-      whereClause.OR = [
-        { title: { contains: query, mode: "insensitive" } },
-        { tags: { has: query.toLowerCase() } }
-      ]
+      whereClause.title = { contains: query, mode: "insensitive" }
+    }
+
+    // Множественный поиск по тегам (AND-логика)
+    if (tagsParam) {
+      const tagsArray = tagsParam.split(",").map(t => t.trim().toLowerCase()).filter(Boolean)
+      if (tagsArray.length > 0) {
+        whereClause.tags = {
+          hasEvery: tagsArray
+        }
+      }
     }
 
     // Фильтр по слагу жанра
@@ -35,7 +44,16 @@ export async function GET(request: Request) {
       }
     }
 
-    // Фильтр по юзернейму продюсера (Связываем с фронтендом профиля)
+    // ИСПРАВЛЕНО: Фильтр по слагу настроения для связи «многие-ко-многим» (moods)
+    if (moodSlug && moodSlug !== "all") {
+      whereClause.moods = {
+        some: {
+          slug: moodSlug
+        }
+      }
+    }
+
+    // Фильтр по юзернейму продюсера
     if (producerUsername) {
       whereClause.producer = {
         username: producerUsername
@@ -67,8 +85,12 @@ export async function GET(request: Request) {
           }
         },
         genre: true,
+        moods: true, // ИСПРАВЛЕНО: Включаем массив moods вместо mood
         licenses: {
           orderBy: { price: "asc" },
+          include: {
+            template: true
+          }
         },
       },
       orderBy: {
