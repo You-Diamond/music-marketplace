@@ -5,7 +5,7 @@ import Link from "next/link"
 import Image from "next/image"
 import { usePathname } from "next/navigation"
 import { useQuery } from "@tanstack/react-query"
-import { Search, SlidersHorizontal, Play, Pause, Heart, ShoppingBag, X, LayoutGrid, List, FileText, Info, Radio, DiscAlbum, ChevronDown, Check } from "lucide-react"
+import { Search, SlidersHorizontal, Play, Pause, Heart, ShoppingBag, X, LayoutGrid, List, FileText, Info, Radio, DiscAlbum, ChevronDown, Check, Loader2 } from "lucide-react"
 import { usePlayerStore } from "@/stores/player-store"
 import { addToCart } from "@/app/actions/cart"
 import { toast } from "sonner"
@@ -32,6 +32,16 @@ const MODES = [
   { label: "Major", value: "Major" }
 ]
 
+// Хелпер для форматирования цен в рубли (РФ локаль)
+const formatCurrency = (amount: number) => {
+  return new Intl.NumberFormat("ru-RU", {
+    style: "currency",
+    currency: "RUB",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(amount)
+}
+
 const buildDatabaseKey = (note: string, accidental: string, mode: string) => {
   if (!note) return "all"
   const shortMode = mode === "Minor" ? "Minor" : "Major"
@@ -45,9 +55,8 @@ export default function BeatsCatalogContent() {
   const [mobileFiltersOpen, setMobileFiltersOpen] = React.useState(false)
   const [activeLicenseWidgetTrack, setActiveLicenseWidgetTrack] = React.useState<TrackWithRelations | null>(null)
 
-  // --- ЕДИНЫЙ OMNIBAR ПОИСК ---
+  // --- СОСТОЯНИЯ ФИЛЬТРОВ ---
   const [globalSearch, setGlobalSearch] = React.useState("")
-  
   const [selectedTags, setSelectedTags] = React.useState<string[]>([]) 
   const [selectedGenre, setSelectedGenre] = React.useState("all")
   const [selectedMood, setSelectedMood] = React.useState("all")
@@ -55,10 +64,21 @@ export default function BeatsCatalogContent() {
   const [sortBy, setSortBy] = React.useState("createdAt")
   const [appliedBpm, setAppliedBpm] = React.useState({ min: 60, max: 180 })
 
+  // --- ДЕБАУНС ДЛЯ ПОИСКА И URL (РЕШАЕТ ПРОБЛЕМУ ЛИШНИХ ЗАПРОСОВ) ---
+  const [debouncedSearch, setDebouncedSearch] = React.useState(globalSearch)
+  const [debouncedBpm, setDebouncedBpm] = React.useState(appliedBpm)
+
+  React.useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(globalSearch)
+      setDebouncedBpm(appliedBpm)
+    }, 400)
+    return () => clearTimeout(handler)
+  }, [globalSearch, appliedBpm])
+
   // --- КЛИЕНТСКИЕ СОСТОЯНИЯ ПОПОВЕРОВ ---
   const [genreSearch, setGenreSearch] = React.useState("")
   const [genreDropdownOpen, setGenreDropdownOpen] = React.useState(false)
-  
   const [moodSearch, setMoodSearch] = React.useState("")
   const [moodDropdownOpen, setMoodDropdownOpen] = React.useState(false)
   const [tagsSuggestionsOpen, setTagsSuggestionsOpen] = React.useState(false)
@@ -66,17 +86,16 @@ export default function BeatsCatalogContent() {
   const [keyParts, setKeyParts] = React.useState({ note: "", accidental: "", mode: "Minor" })
   const [likedTracks, setLikedTracks] = React.useState<Record<string, boolean>>({})
 
-  const { play, pause, track: currentTrack, isPlaying, setQueue } = usePlayerStore()
+  // Достаем isLoading из Zustand (если у вас реализован стейт буферизации аудио в player-store)
+  const { play, pause, track: currentTrack, isPlaying, setQueue, isLoading: isAudioLoading } = usePlayerStore()
 
-  // --- ЗАПРОС: Каталог битов с умным парсингом ---
+  // --- ЗАПРОС КАТАЛОГА (Завязан строго на debounced-состояния) ---
   const { data: beats = [], isLoading } = useQuery<TrackWithRelations[]>({
-    queryKey: ["beats", globalSearch, selectedTags, selectedGenre, selectedMood, selectedKey, appliedBpm, sortBy],
+    queryKey: ["beats", debouncedSearch, selectedTags, selectedGenre, selectedMood, selectedKey, debouncedBpm, sortBy],
     queryFn: async () => {
       const params = new URLSearchParams()
+      let cleanQuery = debouncedSearch.trim()
       
-      let cleanQuery = globalSearch.trim()
-      
-      // Парсим @username для поиска по автору
       if (cleanQuery.includes("@")) {
         const authorMatch = cleanQuery.match(/@([a-zA-Z0-9_\-]+)/)
         if (authorMatch) {
@@ -90,8 +109,8 @@ export default function BeatsCatalogContent() {
       if (selectedGenre !== "all") params.set("genre", selectedGenre)
       if (selectedMood !== "all") params.set("mood", selectedMood)
       if (selectedKey !== "all") params.set("musicKey", selectedKey)
-      if (appliedBpm.min !== 60) params.set("bpmMin", appliedBpm.min.toString())
-      if (appliedBpm.max !== 180) params.set("bpmMax", appliedBpm.max.toString())
+      if (debouncedBpm.min !== 60) params.set("bpmMin", debouncedBpm.min.toString())
+      if (debouncedBpm.max !== 180) params.set("bpmMax", debouncedBpm.max.toString())
       if (sortBy !== "createdAt") params.set("sortBy", sortBy)
 
       const res = await fetch(`/api/beats/search?${params.toString()}`)
@@ -104,8 +123,6 @@ export default function BeatsCatalogContent() {
   const { data: genres = [] } = useQuery<Genre[]>({ queryKey: ["genres"], queryFn: async () => (await fetch("/api/genres")).json() })
   const { data: moods = [] } = useQuery<Mood[]>({ queryKey: ["moods"], queryFn: async () => (await fetch("/api/moods")).json() })
 
-  // --- УМНЫЙ АВТОКОМПЛИТ ТЕГОВ ---
-  // Триггерится только если в конце строки вводится слово, начинающееся с '#'
   const lastWord = globalSearch.split(" ").pop() || ""
   const isTypingTag = lastWord.startsWith("#") && lastWord.length > 1
   
@@ -124,47 +141,30 @@ export default function BeatsCatalogContent() {
   const filteredGenres = genres.filter(g => g.name.toLowerCase().includes(genreSearch.toLowerCase()))
   const filteredMoods = moods.filter(m => m.name.toLowerCase().includes(moodSearch.toLowerCase()))
 
+  // Синхронизация URL работает на debounced-данных, не вызывая лишних триггеров
   React.useEffect(() => {
-    const timeout = setTimeout(() => {
-      const params = new URLSearchParams()
-      if (globalSearch) params.set("query", globalSearch)
-      if (selectedTags.length > 0) params.set("tags", selectedTags.join(","))
-      if (selectedGenre !== "all") params.set("genre", selectedGenre)
-      if (selectedMood !== "all") params.set("mood", selectedMood)
-      if (selectedKey !== "all") params.set("musicKey", selectedKey)
-      if (appliedBpm.min !== 60) params.set("bpmMin", appliedBpm.min.toString())
-      if (appliedBpm.max !== 180) params.set("bpmMax", appliedBpm.max.toString())
-      if (sortBy !== "createdAt") params.set("sortBy", sortBy)
+    const params = new URLSearchParams()
+    if (debouncedSearch) params.set("query", debouncedSearch)
+    if (selectedTags.length > 0) params.set("tags", selectedTags.join(","))
+    if (selectedGenre !== "all") params.set("genre", selectedGenre)
+    if (selectedMood !== "all") params.set("mood", selectedMood)
+    if (selectedKey !== "all") params.set("musicKey", selectedKey)
+    if (debouncedBpm.min !== 60) params.set("bpmMin", debouncedBpm.min.toString())
+    if (debouncedBpm.max !== 180) params.set("bpmMax", debouncedBpm.max.toString())
+    if (sortBy !== "createdAt") params.set("sortBy", sortBy)
 
-      const newUrl = `${pathname}?${params.toString()}`
-      window.history.replaceState({ ...window.history.state, as: newUrl, url: newUrl }, "", newUrl)
-    }, 400)
-    return () => clearTimeout(timeout)
-  }, [globalSearch, selectedTags, selectedGenre, selectedMood, selectedKey, appliedBpm, sortBy, pathname])
-
-  React.useEffect(() => {
-    if (beats.length > 0) {
-      setQueue(beats.map(item => ({
-        id: item.id, title: item.title, image: item.image, audio: item.audio, musicKey: item.musicKey, bpm: item.bpm,
-        licenses: item.licenses?.map(l => ({ id: l.id, price: l.price })) || [],
-        producer: { username: item.producer.username, displayName: item.producer.displayName }
-      })))
-    }
-  }, [beats, setQueue])
+    const newUrl = `${pathname}?${params.toString()}`
+    window.history.replaceState({ ...window.history.state, as: newUrl, url: newUrl }, "", newUrl)
+  }, [debouncedSearch, selectedTags, selectedGenre, selectedMood, selectedKey, debouncedBpm, sortBy, pathname])
 
   const handleTagToggle = (tag: string) => {
     const cleanTag = tag.replace("#", "").trim().toLowerCase()
     if (!cleanTag) return
-
-    setSelectedTags(prev => {
-      if (prev.includes(cleanTag)) return prev.filter(t => t !== cleanTag)
-      return [...prev, cleanTag]
-    })
+    setSelectedTags(prev => prev.includes(cleanTag) ? prev.filter(t => t !== cleanTag) : [...prev, cleanTag])
   }
 
   const handleSelectSuggestedTag = (tag: string) => {
     handleTagToggle(tag)
-    // Убираем незавершенный хештег из строки поиска после выбора
     const words = globalSearch.split(" ")
     words.pop()
     setGlobalSearch(words.join(" ") + (words.length > 0 ? " " : ""))
@@ -185,15 +185,27 @@ export default function BeatsCatalogContent() {
     }
   }
 
+  // --- ИСПРАВЛЕННАЯ ЛОГИКА ПЛЕЕРА (Очередь ставится ТУТ, а не в useEffect) ---
   const handlePlayToggle = (b: TrackWithRelations) => {
-    if (currentTrack?.id === b.id && isPlaying) {
-      pause()
+    if (currentTrack?.id === b.id) {
+      if (isPlaying) pause()
+      else play(currentTrack, [])
     } else {
-      play({
+      // Формируем новую очередь из ТЕКУЩЕГО среза состояния каталога в момент клика
+      const targetQueue = beats.map(item => ({
+        id: item.id, title: item.title, image: item.image, audio: item.audio, musicKey: item.musicKey, bpm: item.bpm,
+        licenses: item.licenses?.map(l => ({ id: l.id, price: l.price })) || [],
+        producer: { username: item.producer.username, displayName: item.producer.displayName }
+      }))
+      
+      const trackToPlay = {
         id: b.id, title: b.title, image: b.image, audio: b.audio, musicKey: b.musicKey, bpm: b.bpm,
         licenses: b.licenses?.map(l => ({ id: l.id, price: l.price })) || [],
         producer: { username: b.producer.username, displayName: b.producer.displayName }
-      }, [])
+      }
+
+      setQueue(targetQueue)
+      play(trackToPlay, targetQueue)
     }
   }
 
@@ -218,6 +230,18 @@ export default function BeatsCatalogContent() {
     setAppliedBpm({ min: 60, max: 180 })
     setGlobalSearch("")
     setSelectedTags([])
+  }
+
+  // Рендер кнопки Play/Pause со спиннером загрузки буфера аудио
+  const renderPlayButtonIcon = (trackId: string, iconSize = 18, isTable = false) => {
+    const isCurrent = currentTrack?.id === trackId
+    if (isCurrent && isAudioLoading) {
+      return <Loader2 size={iconSize} className="animate-spin text-purple-400" />
+    }
+    if (isCurrent && isPlaying) {
+      return <Pause size={iconSize} className="fill-current" />
+    }
+    return <Play size={iconSize} className={`fill-current ${!isTable ? "ml-1" : "ml-0.5"}`} />
   }
 
   const FiltersSidebar = () => {
@@ -246,7 +270,7 @@ export default function BeatsCatalogContent() {
           )}
         </div>
 
-        {/* СЕЛЕКТ ЖАНРОВ */}
+        {/* ЖАНРЫ */}
         <div className="space-y-2 relative">
           <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">Музыкальный Жанр</label>
           <button
@@ -295,7 +319,7 @@ export default function BeatsCatalogContent() {
           )}
         </div>
 
-        {/* СЕЛЕКТ НАСТРОЕНИЙ */}
+        {/* НАСТРОЕНИЯ */}
         <div className="space-y-2 relative">
           <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">Настроение трека</label>
           <button
@@ -344,13 +368,13 @@ export default function BeatsCatalogContent() {
           )}
         </div>
 
-        {/* КОНСТРУКТОР ТОНАЛЬНОСТЕЙ */}
+        {/* ТОНАЛЬНОСТИ */}
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">Тональность</label>
             {keyParts.note && (
               <span className="text-[11px] font-mono font-bold text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded border border-purple-500/20">
-                {keyParts.note}{keyParts.accidental} {keyParts.mode}
+                {keyParts.note}{keyParts.accidental} {keyParts.mode === "Minor" ? "Мин" : "Маж"}
               </span>
             )}
           </div>
@@ -391,7 +415,7 @@ export default function BeatsCatalogContent() {
                       key={m.value} type="button" onClick={() => handleKeyChange("mode", m.value)}
                       className={`h-8 rounded-lg text-[11px] font-bold transition-all duration-150 ${isActive ? "bg-purple-500/20 border border-purple-500/40 text-purple-400" : "text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.02]"}`}
                     >
-                      {m.label}
+                      {m.label === "Minor" ? "Минор" : "Мажор"}
                     </button>
                   )
                 })}
@@ -400,7 +424,7 @@ export default function BeatsCatalogContent() {
           </div>
         </div>
 
-        {/* ТЕМП BPM */}
+        {/* BPM */}
         <BpmFilter appliedMin={appliedBpm.min} appliedMax={appliedBpm.max} onApply={(min, max) => setAppliedBpm({ min, max })} />
       </div>
     )
@@ -409,7 +433,6 @@ export default function BeatsCatalogContent() {
   return (
     <div className="min-h-screen bg-[#050608] text-zinc-100 p-4 sm:p-8 lg:p-12 relative overflow-hidden">
       
-      {/* Декоративные световые блики на фоне (Liquid aesthetics) */}
       <div className="absolute top-[-10%] left-[-5%] w-[40%] h-[40%] bg-purple-900/10 blur-[120px] rounded-full pointer-events-none" />
       <div className="absolute bottom-[-10%] right-[-5%] w-[30%] h-[30%] bg-indigo-900/10 blur-[120px] rounded-full pointer-events-none" />
 
@@ -421,7 +444,7 @@ export default function BeatsCatalogContent() {
           </div>
         </div>
 
-        {/* УМНАЯ СТРОКА ПОИСКА (OMNIBAR) С ВОЗДУШНЫМ ДИЗАЙНОМ */}
+        {/* ОМНИБАР */}
         <div className="relative group z-20">
           <div className="absolute inset-0 bg-gradient-to-r from-purple-500/10 via-transparent to-purple-500/10 rounded-2xl blur-md opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
           <div className="relative flex items-center bg-white/[0.01] hover:bg-white/[0.02] border border-white/[0.05] rounded-2xl transition-all duration-300 backdrop-blur-xl shadow-lg focus-within:border-purple-500/40 focus-within:bg-white/[0.03]">
@@ -447,7 +470,7 @@ export default function BeatsCatalogContent() {
             )}
           </div>
 
-          {/* ВЫПАДАЮЩИЙ СПИСОК АВТОКОМПЛИТА ТЕГОВ */}
+          {/* АВТОКОМПЛИТ ТЕГОВ */}
           {tagsSuggestionsOpen && isTypingTag && tagSuggestions.length > 0 && (
             <>
               <div className="fixed inset-0 z-30" onClick={() => setTagsSuggestionsOpen(false)} />
@@ -472,7 +495,7 @@ export default function BeatsCatalogContent() {
           )}
         </div>
 
-        {/* УПРАВЛЕНИЕ ОТОБРАЖЕНИЕМ И СОРТИРОВКА */}
+        {/* СОРТИРОВКА И ПЕРЕКЛЮЧАТЕЛЬ ВИДА */}
         <div className="flex items-center justify-between bg-white/[0.01] border border-white/[0.03] p-2 rounded-2xl backdrop-blur-sm">
           <div className="flex items-center gap-2">
             <button onClick={() => setMobileFiltersOpen(true)} className="lg:hidden flex items-center gap-2 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] px-4 py-2.5 rounded-xl text-sm font-medium transition-colors"><SlidersHorizontal size={15} /> Фильтры</button>
@@ -503,12 +526,11 @@ export default function BeatsCatalogContent() {
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-4 xl:grid-cols-5 gap-8 items-start">
-          {/* ВОЗДУШНЫЙ САЙДБАР (LIQUID GLASS) */}
           <aside className="hidden lg:block bg-white/[0.01] border border-white/[0.03] p-6 rounded-[2rem] lg:sticky lg:top-6 backdrop-blur-2xl shadow-2xl ring-1 ring-white/[0.01]">
             <FiltersSidebar />
           </aside>
 
-          {/* ПОЛУПРОЗРАЧНЫЙ МОБИЛЬНЫЙ ФИЛЬТР */}
+          {/* МОБИЛЬНЫЙ ФИЛЬТР */}
           {mobileFiltersOpen && (
             <div className="fixed inset-0 bg-black/60 backdrop-blur-xl z-50 lg:hidden flex justify-end animate-in fade-in duration-200">
               <div className="bg-[#0b0c10]/80 w-full max-w-sm h-full p-6 overflow-y-auto space-y-6 flex flex-col justify-between border-l border-white/[0.05] shadow-2xl animate-in slide-in-from-right-8 duration-300 backdrop-blur-2xl">
@@ -540,16 +562,16 @@ export default function BeatsCatalogContent() {
             ) : viewMode === "grid" ? (
               <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-5">
                 {beats.map((b) => {
-                  const defaultPrice = b.licenses?.[0]?.price || 29.99
+                  const defaultPrice = b.licenses?.[0]?.price || 2000
                   const isCurrent = currentTrack?.id === b.id
                   return (
                     <div key={b.id} className={`group bg-white/[0.01] border p-3.5 rounded-[2rem] transition-all duration-300 flex flex-col justify-between hover:bg-white/[0.03] backdrop-blur-md ${isCurrent && isPlaying ? "border-purple-500/50 shadow-[0_0_30px_rgba(147,51,234,0.1)] ring-1 ring-purple-500/20" : "border-white/[0.03]"}`}>
                       <div>
                         <div onClick={() => handlePlayToggle(b)} className="relative aspect-square rounded-[1.25rem] overflow-hidden mb-4 bg-zinc-950 cursor-pointer shadow-lg group/cover">
                           {b.image && <Image src={b.image} alt="" fill className="object-cover group-hover/cover:scale-105 transition-transform duration-700 ease-out" />}
-                          <div className={`absolute inset-0 bg-black/40 backdrop-blur-[2px] flex items-center justify-center transition-all duration-300 ${isCurrent && isPlaying ? "opacity-100" : "opacity-0 group-hover/cover:opacity-100"}`}>
+                          <div className={`absolute inset-0 bg-black/40 backdrop-blur-[2px] flex items-center justify-center transition-all duration-300 ${isCurrent ? "opacity-100" : "opacity-0 group-hover/cover:opacity-100"}`}>
                             <div className="h-12 w-12 rounded-full bg-purple-600 text-white flex items-center justify-center shadow-2xl scale-90 group-hover/cover:scale-100 transition-transform duration-300">
-                              {isCurrent && isPlaying ? <Pause size={18} className="fill-current" /> : <Play size={18} className="ml-1 fill-current" />}
+                              {renderPlayButtonIcon(b.id, 18)}
                             </div>
                           </div>
                         </div>
@@ -582,7 +604,7 @@ export default function BeatsCatalogContent() {
                           <span className="bg-black/20 px-1.5 py-0.5 rounded border border-white/[0.02]">{b.musicKey}</span>
                         </div>
                         <div className="flex items-center gap-2">
-                          <button onClick={() => setActiveLicenseWidgetTrack(b)} className="flex-1 h-9 rounded-xl bg-purple-600/90 hover:bg-purple-500 text-white text-xs font-bold transition-colors flex items-center justify-center gap-1.5 shadow-md"><ShoppingBag size={13} /> <span>${Number(defaultPrice).toFixed(2)}</span></button>
+                          <button onClick={() => setActiveLicenseWidgetTrack(b)} className="flex-1 h-9 rounded-xl bg-purple-600/90 hover:bg-purple-500 text-white text-xs font-bold transition-colors flex items-center justify-center gap-1.5 shadow-md"><ShoppingBag size={13} /> <span>{formatCurrency(Number(defaultPrice))}</span></button>
                           <button onClick={(e) => toggleLike(b.id, e)} className="h-9 w-9 shrink-0 rounded-xl bg-white/[0.03] border border-white/[0.05] text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-all flex items-center justify-center"><Heart size={14} className={likedTracks[b.id] ? "fill-red-500 text-red-500" : ""} /></button>
                         </div>
                       </div>
@@ -591,7 +613,7 @@ export default function BeatsCatalogContent() {
                 })}
               </div>
             ) : (
-              // ОБНОВЛЕННЫЙ ТАБЛИЧНЫЙ ВИД С "ЗАМОРОЖЕННОЙ" ШИРИНОЙ КНОПОК И ВОЗДУШНЫМ UI
+              // ОБНОВЛЕННЫЙ ТАБЛИЧНЫЙ ВИД С "ЗАМОРОЖЕННОЙ" ШИРИНОЙ КНОПОК
               <div className="bg-white/[0.01] border border-white/[0.02] rounded-[2rem] overflow-hidden backdrop-blur-2xl shadow-2xl ring-1 ring-white/[0.01]">
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse min-w-[700px]">
@@ -602,18 +624,18 @@ export default function BeatsCatalogContent() {
                         <th className="py-4 px-4 w-24 text-center">BPM</th>
                         <th className="py-4 px-4 w-28 text-center">Ключ</th>
                         <th className="py-4 px-4">Теги</th>
-                        <th className="py-4 px-5 text-right w-[160px]">Действия</th>
+                        <th className="py-4 px-5 text-right w-[180px]">Действия</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-white/[0.02]">
                       {beats.map((b) => {
                         const isCurrent = currentTrack?.id === b.id
-                        const defaultPrice = b.licenses?.[0]?.price || 29.99
+                        const defaultPrice = b.licenses?.[0]?.price || 2000
                         return (
-                          <tr key={b.id} className={`group transition-colors hover:bg-white/[0.02] ${isCurrent && isPlaying ? "bg-purple-500/[0.04]" : ""}`}>
+                          <tr key={b.id} className={`group transition-colors hover:bg-white/[0.02] ${isCurrent ? "bg-purple-500/[0.04]" : ""}`}>
                             <td className="py-3 px-5 text-center">
-                              <button onClick={() => handlePlayToggle(b)} className={`h-10 w-10 rounded-full flex items-center justify-center transition-all ${isCurrent && isPlaying ? "bg-purple-600 text-white shadow-lg shadow-purple-900/30 scale-105" : "bg-white/[0.04] border border-white/[0.04] text-zinc-400 group-hover:bg-purple-600 group-hover:text-white group-hover:border-transparent group-hover:scale-105"}`}>
-                                {isCurrent && isPlaying ? <Pause size={14} className="fill-current" /> : <Play size={14} className="fill-current ml-0.5" />}
+                              <button onClick={() => handlePlayToggle(b)} className={`h-10 w-10 rounded-full flex items-center justify-center transition-all ${isCurrent ? "bg-purple-600 text-white shadow-lg shadow-purple-900/30 scale-105" : "bg-white/[0.04] border border-white/[0.04] text-zinc-400 group-hover:bg-purple-600 group-hover:text-white group-hover:border-transparent group-hover:scale-105"}`}>
+                                {renderPlayButtonIcon(b.id, 14, true)}
                               </button>
                             </td>
                             <td className="py-3 px-2">
@@ -644,12 +666,11 @@ export default function BeatsCatalogContent() {
                               </div>
                             </td>
                             <td className="py-3 px-5 text-right">
-                              {/* ЖЕСТКОЕ ВЫРАВНИВАНИЕ ЭЛЕМЕНТОВ (shrink-0 и фиксированная ширина w-24 для цены) */}
                               <div className="flex items-center justify-end gap-2.5">
                                 <button onClick={(e) => toggleLike(b.id, e)} className="h-9 w-9 shrink-0 rounded-xl bg-white/[0.02] border border-white/[0.05] flex items-center justify-center text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors"><Heart size={14} className={likedTracks[b.id] ? "fill-red-500 text-red-500" : ""} /></button>
-                                <button onClick={() => setActiveLicenseWidgetTrack(b)} className="h-9 w-24 shrink-0 rounded-xl bg-white/[0.04] border border-white/[0.06] hover:bg-purple-600/90 hover:text-white hover:border-transparent text-[11px] font-bold font-sans text-zinc-200 transition-all flex items-center justify-center gap-1.5 shadow-sm">
+                                <button onClick={() => setActiveLicenseWidgetTrack(b)} className="h-9 w-28 shrink-0 rounded-xl bg-white/[0.04] border border-white/[0.06] hover:bg-purple-600/90 hover:text-white hover:border-transparent text-[11px] font-bold font-sans text-zinc-200 transition-all flex items-center justify-center gap-1.5 shadow-sm">
                                   <ShoppingBag size={13} /> 
-                                  <span>${Number(defaultPrice).toFixed(2)}</span>
+                                  <span>{formatCurrency(Number(defaultPrice))}</span>
                                 </button>
                               </div>
                             </td>
@@ -665,7 +686,7 @@ export default function BeatsCatalogContent() {
         </div>
       </div>
 
-      {/* МОДАЛЬНОЕ ОКНО ЛИЦЕНЗИЙ (ОБЛЕГЧЕННОЕ) */}
+      {/* МОДАЛЬНОЕ ОКНО ЛИЦЕНЗИЙ */}
       {activeLicenseWidgetTrack && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-xl z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-[#0b0c10]/80 backdrop-blur-2xl border border-white/[0.06] w-full max-w-4xl rounded-[2rem] overflow-hidden shadow-2xl flex flex-col max-h-[85vh] scale-100 animate-in zoom-in-95 duration-200 ring-1 ring-white/[0.02]">
@@ -697,7 +718,7 @@ export default function BeatsCatalogContent() {
                           <span className="text-lg font-bold text-purple-400">Договорная</span>
                         ) : (
                           <>
-                            <span className="text-3xl font-black text-white font-mono">${lic.price}</span>
+                            <span className="text-2xl font-black text-white font-mono">{formatCurrency(lic.price)}</span>
                             <span className="text-[10px] text-zinc-500 font-mono">/ бессрочно</span>
                           </>
                         )}

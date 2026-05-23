@@ -4,8 +4,8 @@ import prisma from "@/lib/prisma"
 import { auth } from "@/lib/auth"
 import { revalidatePath } from "next/cache"
 
-// 1. Добавление трека в корзину
-export async function addToCart(trackId: string, licenseTemplateId?: string) {
+// 1. Добавление трека в корзину с учетом конкретной лицензии
+export async function addToCart(trackId: string, licenseId?: string) {
   const session = await auth()
   
   if (!session?.user?.id) {
@@ -21,36 +21,36 @@ export async function addToCart(trackId: string, licenseTemplateId?: string) {
 
     if (!track) return { success: false, error: "Трек не найден" }
 
-    // Определяем лицензию (если не передана, берем самую дешевую/первую базовую)
-    let finalLicenseId = licenseTemplateId
+    let finalLicenseId = licenseId
 
     if (!finalLicenseId) {
-      // Ищем дефолтную лицензию этого трека в БД
+      // Если лицензия не передана, ищем самую дешевую активную лицензию этого трека
       const defaultLicense = await prisma.license.findFirst({
-        where: { trackId: track.id },
+        where: { trackId: track.id, isActive: true },
         orderBy: { price: "asc" }
       })
       
       if (defaultLicense) {
         finalLicenseId = defaultLicense.id
       } else {
-        return { success: false, error: "Для этого трека не настроены лицензии" }
+        return { success: false, error: "Для этого трека не настроены активные лицензии." }
       }
     }
 
-    // Проверяем, нет ли уже этого трека в корзине пользователя
+    // Проверяем, нет ли уже точно такого же товара с этой же лицензией в корзине пользователя
     const existingItem = await prisma.cartItem.findFirst({
       where: {
         userId: session.user.id,
-        trackId: trackId
+        trackId: trackId,
+        licenseId: finalLicenseId
       }
     })
 
     if (existingItem) {
-      return { success: false, error: "Этот бит уже находится в вашей корзине" }
+      return { success: false, error: "Этот бит с выбранной лицензией уже добавлен в корзину." }
     }
 
-    // Добавляем в корзину
+    // Создаем запись в корзине
     await prisma.cartItem.create({
       data: {
         userId: session.user.id,
@@ -93,16 +93,16 @@ export async function removeFromCartServer(cartItemId: string) {
 
   try {
     await prisma.cartItem.delete({
-      where: { 
+      where: {
         id: cartItemId,
-        userId: session.user.id // Безопасность: удаляем только свою запись
+        userId: session.user.id
       }
     })
-    
+
     revalidatePath("/cart")
     return { success: true }
-  } catch (err) {
-    console.error("Ошибка удаления позиции корзины:", err)
-    return { success: false, error: "Ошибка при удалении" }
+  } catch (error) {
+    console.error("Ошибка при удалении из корзины:", error)
+    return { success: false, error: "Не удалось удалить элемент из корзины" }
   }
 }
