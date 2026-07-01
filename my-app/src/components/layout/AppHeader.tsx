@@ -16,7 +16,7 @@ export default function AppHeader() {
   const isSubscribed = subStatus === "ACTIVE" || subStatus === "CANCELED"
 
   const navLinks = [
-    { name: "Каталог", href: "/catalog" },
+    { name: "Каталог", href: "/beats" },
     { name: "Драм-киты", href: "/packs" },
     { name: "Плейлисты", href: "/playlists" },
   ]
